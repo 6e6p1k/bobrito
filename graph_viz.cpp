@@ -67,7 +67,7 @@ static const char* op_color(OpType op) {
     return clr::reset;
 }
 
-static string shape_str(ShapeData* meta) {
+static string shape_str(const ShapePtr& meta) {
     ostringstream ss;
     ss << "[";
     for (int i = 0; i < meta->ndim; i++) {
@@ -78,7 +78,7 @@ static string shape_str(ShapeData* meta) {
     return ss.str();
 }
 
-static string strides_str(ShapeData* meta) {
+static string strides_str(const ShapePtr& meta) {
     ostringstream ss;
     ss << "[";
     for (int i = 0; i < meta->ndim; i++) {
@@ -121,6 +121,8 @@ static BoxLines make_box(Node* node) {
                         string(clr::yellow) + shape_str(node->h_meta) + clr::reset});
         rows.push_back({string(clr::dim) + "Strides:" + clr::reset,
                         string(clr::dim) + strides_str(node->h_meta) + clr::reset});
+        rows.push_back({string(clr::dim) + "Uses:" + clr::reset,
+                        string(clr::cyan) + to_string(node->use_count) + clr::reset});
     } else {
         border_color = clr::green;
         SourceNode* snode = static_cast<SourceNode*>(node);
@@ -129,6 +131,8 @@ static BoxLines make_box(Node* node) {
                         string(clr::yellow) + shape_str(node->h_meta) + clr::reset});
         rows.push_back({string(clr::dim) + "Strides:" + clr::reset,
                         string(clr::dim) + strides_str(node->h_meta) + clr::reset});
+        rows.push_back({string(clr::dim) + "Uses:" + clr::reset,
+                        string(clr::cyan) + to_string(snode->use_count) + clr::reset});
         if (snode->h_requiers_grad)
             rows.push_back({string(clr::bgreen) + "requires_grad" + clr::reset, ""});
     }
@@ -222,16 +226,16 @@ static void draw_node(Node* node, const string& prefix, bool is_last, bool is_ro
             // draw connecting wire
             cout << child_prefix << (last_child ? "  " : "│ ") << endl;
 
-            draw_node(inode->inputs[i], child_prefix, last_child, false);
+            draw_node(inode->inputs[i].get(), child_prefix, last_child, false);
         }
     }
 }
 
-void visualize(Node* root) {
+void visualize(const std::shared_ptr<Node>& root) {
     cout << endl;
     cout << clr::dim << "  ╶──── Computation Graph ────╴" << clr::reset << endl;
     cout << endl;
-    draw_node(root, "  ", true, true);
+    draw_node(root.get(), "  ", true, true);
     cout << endl;
 }
 
@@ -270,16 +274,17 @@ static void dot_emit_node(ofstream& out, Node* node, unordered_set<Node*>& visit
             << "<TR><TD COLSPAN=\"2\"><FONT POINT-SIZE=\"18\">" << sym << "</FONT> <B>" << name << "</B></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Strides: " << strides_s << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">Uses: " << node->use_count << "</FONT></TD></TR>"
             << "</TABLE>>\n"
             << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
             << "        penwidth=2 color=\"" << color << "30\"\n"
             << "    ];\n";
 
         for (int i = 0; i < inode->num_inputs; i++) {
-            string child_id = "n" + to_string((uintptr_t)inode->inputs[i]);
+            string child_id = "n" + to_string((uintptr_t)inode->inputs[i].get());
             out << "    " << child_id << " -> " << id
                 << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
-            dot_emit_node(out, inode->inputs[i], visited);
+            dot_emit_node(out, inode->inputs[i].get(), visited);
         }
     } else {
         SourceNode* snode = static_cast<SourceNode*>(node);
@@ -293,7 +298,8 @@ static void dot_emit_node(ofstream& out, Node* node, unordered_set<Node*>& visit
             << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\">"
             << "<TR><TD><B>Source</B></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Strides: " << strides_s << "</FONT></TD></TR>";
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Strides: " << strides_s << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">Uses: " << snode->use_count << "</FONT></TD></TR>";
         if (snode->h_requiers_grad)
             out << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"9\" COLOR=\"#388E3C\">requires_grad</FONT></TD></TR>";
         out << "</TABLE>>\n"
@@ -303,7 +309,7 @@ static void dot_emit_node(ofstream& out, Node* node, unordered_set<Node*>& visit
     }
 }
 
-void export_dot(Node* root, const char* filename) {
+void export_dot(const std::shared_ptr<Node>& root, const char* filename) {
     ofstream out(filename);
     out << "digraph ComputationGraph {\n"
         << "    rankdir=BT;\n"
@@ -315,7 +321,7 @@ void export_dot(Node* root, const char* filename) {
         << "    edge [fontname=\"Helvetica\" fontsize=9];\n\n";
 
     unordered_set<Node*> visited;
-    dot_emit_node(out, root, visited);
+    dot_emit_node(out, root.get(), visited);
 
     out << "}\n";
     out.close();
@@ -333,16 +339,16 @@ static void topo_build(Node* node, unordered_set<Node*>& visited, vector<Node*>&
     if (node->kind == NodeKind::Internal) {
         InternalNode* inode = static_cast<InternalNode*>(node);
         for (int i = 0; i < inode->num_inputs; i++)
-            topo_build(inode->inputs[i], visited, order);
+            topo_build(inode->inputs[i].get(), visited, order);
     }
     order.push_back(node);
 }
 
-void backward_viz(Node* root) {
+void backward_viz(const std::shared_ptr<Node>& root) {
     // topological sort
     unordered_set<Node*> visited;
     vector<Node*> order;
-    topo_build(root, visited, order);
+    topo_build(root.get(), visited, order);
 
     // backward = reverse topological order
     cout << endl;
@@ -363,6 +369,8 @@ void backward_viz(Node* root) {
                  << clr::yellow << shape_str(node->h_meta) << clr::reset << endl;
             cout << "       " << clr::dim << "Strides: " << clr::reset
                  << clr::dim << strides_str(node->h_meta) << clr::reset << endl;
+            cout << "       " << clr::dim << "Uses:    " << clr::reset
+                 << clr::cyan << node->use_count << clr::reset << endl;
 
             // show which inputs this node pulls grad from
             cout << "       " << clr::dim << "inputs:  " << clr::reset;
@@ -370,7 +378,7 @@ void backward_viz(Node* root) {
                 if (i) cout << ", ";
                 // find this input's position in topo order
                 for (int j = 0; j < (int)order.size(); j++) {
-                    if (order[j] == inode->inputs[i]) {
+                    if (order[j] == inode->inputs[i].get()) {
                         cout << clr::dim << "→ [" << ((int)order.size() - 1 - j) << "]" << clr::reset;
                         break;
                     }
@@ -386,6 +394,8 @@ void backward_viz(Node* root) {
                  << clr::yellow << shape_str(node->h_meta) << clr::reset << endl;
             cout << "       " << clr::dim << "Strides: " << clr::reset
                  << clr::dim << strides_str(node->h_meta) << clr::reset << endl;
+            cout << "       " << clr::dim << "Uses:    " << clr::reset
+                 << clr::cyan << snode->use_count << clr::reset << endl;
             if (snode->h_requiers_grad)
                 cout << "       " << clr::bgreen << "requires_grad" << clr::reset << endl;
         }

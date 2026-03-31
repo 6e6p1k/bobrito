@@ -1,12 +1,22 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include "utils.h"
 #include "grad.h"
 #include "graph_viz.h"
 
 using namespace std;
+
+std::shared_ptr<SourceNode> make_source_node(int ndim, int* shape, bool requires_grad, string label) {
+    auto node = std::make_shared<SourceNode>();
+    node->kind = NodeKind::Source;
+    node->h_meta = make_shape_data(ndim, shape);
+    node->h_requiers_grad = requires_grad;
+    node->label = label;
+    return node;
+}
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -103,7 +113,7 @@ TEST(shape_data_shape_strides_access) {
 
 TEST(make_shape_data_auto_strides) {
     int shape[] = {2, 3, 4};
-    ShapeData* sd = make_shape_data(3, shape);
+    auto sd = make_shape_data(3, shape);
     assert(sd->ndim == 3);
     assert(sd->shape()[0] == 2);
     assert(sd->shape()[1] == 3);
@@ -111,18 +121,16 @@ TEST(make_shape_data_auto_strides) {
     assert(sd->strides()[0] == 12);
     assert(sd->strides()[1] == 4);
     assert(sd->strides()[2] == 1);
-    free(sd);
 }
 
 TEST(make_shape_data_custom_strides) {
     int shape[] = {3, 4};
     int strides[] = {1, 3}; // column-major
-    ShapeData* sd = make_shape_data(2, shape, strides);
+    auto sd = make_shape_data(2, shape, strides);
     assert(sd->shape()[0] == 3);
     assert(sd->shape()[1] == 4);
     assert(sd->strides()[0] == 1);
     assert(sd->strides()[1] == 3);
-    free(sd);
 }
 
 // ============ check_shape_return_out_shape::elemwise ============
@@ -245,67 +253,63 @@ TEST(reduction_negative_dim) {
 TEST(elemwise_node_same_shape) {
     int s1[] = {2, 3};
     int s2[] = {2, 3};
-    Node a, b;
-    a.kind = NodeKind::Source; b.kind = NodeKind::Source;
-    a.h_meta = make_shape_data(2, s1);
-    b.h_meta = make_shape_data(2, s2);
+    auto a = make_shared<Node>();
+    auto b = make_shared<Node>();
+    a->kind = NodeKind::Source; b->kind = NodeKind::Source;
+    a->h_meta = make_shape_data(2, s1);
+    b->h_meta = make_shape_data(2, s2);
 
-    auto [shape, ndim] = check_shape_return_out_shape::elemwise(&a, &b);
+    auto [shape, ndim] = check_shape_return_out_shape::elemwise(a.get(), b.get());
     assert(ndim == 2);
     assert(shape[0] == 2);
     assert(shape[1] == 3);
     delete[] shape;
-    free(a.h_meta);
-    free(b.h_meta);
 }
 
 TEST(elemwise_node_broadcast) {
     int s1[] = {2, 3, 4};
     int s2[] = {1, 4};
-    Node a, b;
-    a.kind = NodeKind::Source; b.kind = NodeKind::Source;
-    a.h_meta = make_shape_data(3, s1);
-    b.h_meta = make_shape_data(2, s2);
+    auto a = make_shared<Node>();
+    auto b = make_shared<Node>();
+    a->kind = NodeKind::Source; b->kind = NodeKind::Source;
+    a->h_meta = make_shape_data(3, s1);
+    b->h_meta = make_shape_data(2, s2);
 
-    auto [shape, ndim] = check_shape_return_out_shape::elemwise(&a, &b);
+    auto [shape, ndim] = check_shape_return_out_shape::elemwise(a.get(), b.get());
     assert(ndim == 3);
     assert(shape[0] == 2);
     assert(shape[1] == 3);
     assert(shape[2] == 4);
     delete[] shape;
-    free(a.h_meta);
-    free(b.h_meta);
 }
 
 // ============ Node-level reduction ============
 
 TEST(reduction_node_dim1) {
     int s[] = {2, 3, 4};
-    Node a;
-    a.kind = NodeKind::Source;
-    a.h_meta = make_shape_data(3, s);
+    auto a = make_shared<Node>();
+    a->kind = NodeKind::Source;
+    a->h_meta = make_shape_data(3, s);
 
-    auto [shape, ndim] = check_shape_return_out_shape::reduction(&a, 1, false);
+    auto [shape, ndim] = check_shape_return_out_shape::reduction(a.get(), 1, false);
     assert(ndim == 2);
     assert(shape[0] == 2);
     assert(shape[1] == 4);
     delete[] shape;
-    free(a.h_meta);
 }
 
 TEST(reduction_node_keepdims) {
     int s[] = {2, 3, 4};
-    Node a;
-    a.kind = NodeKind::Source;
-    a.h_meta = make_shape_data(3, s);
+    auto a = make_shared<Node>();
+    a->kind = NodeKind::Source;
+    a->h_meta = make_shape_data(3, s);
 
-    auto [shape, ndim] = check_shape_return_out_shape::reduction(&a, 0, true);
+    auto [shape, ndim] = check_shape_return_out_shape::reduction(a.get(), 0, true);
     assert(ndim == 3);
     assert(shape[0] == 1);
     assert(shape[1] == 3);
     assert(shape[2] == 4);
     delete[] shape;
-    free(a.h_meta);
 }
 
 // ============ make_internal_node ============
@@ -313,28 +317,52 @@ TEST(reduction_node_keepdims) {
 TEST(make_internal_node_basic) {
     int s1[] = {2, 3};
     int s2[] = {2, 3};
-    Node a, b;
-    a.kind = NodeKind::Source; b.kind = NodeKind::Source;
-    a.h_meta = make_shape_data(2, s1);
-    b.h_meta = make_shape_data(2, s2);
+    auto a = make_shared<Node>();
+    auto b = make_shared<Node>();
+    a->kind = NodeKind::Source; b->kind = NodeKind::Source;
+    a->h_meta = make_shape_data(2, s1);
+    b->h_meta = make_shape_data(2, s2);
 
     int out_shape[] = {2, 3};
-    Node* inputs[] = {&a, &b};
-    Node* result = make_internal_node(OpType::Add, inputs, 2, out_shape, 2);
+    shared_ptr<Node> inputs[] = {a, b};
+    auto result = make_internal_node(OpType::Add, inputs, 2, out_shape, 2);
 
-    InternalNode* inode = static_cast<InternalNode*>(result);
+    InternalNode* inode = static_cast<InternalNode*>(result.get());
     assert(inode->op == OpType::Add);
     assert(inode->num_inputs == 2);
-    assert(inode->inputs[0] == &a);
-    assert(inode->inputs[1] == &b);
+    assert(inode->inputs[0] == a);
+    assert(inode->inputs[1] == b);
     assert(inode->h_meta->ndim == 2);
     assert(inode->h_meta->shape()[0] == 2);
     assert(inode->h_meta->shape()[1] == 3);
+}
 
-    free(inode->h_meta);
-    delete inode;
-    free(a.h_meta);
-    free(b.h_meta);
+// ============ backward_pass =======================
+
+TEST(backward_pass) {
+    // f = (n1.sum(-1) * n2 + n3) * (512, 128, 512)
+    // (128, 28*28)
+    int s1[] = {128, 784};
+    auto n1 = make_source_node(2, s1, true, "source_A");
+
+    // (1, 512)
+    int s2[] = {1, 512};
+    auto n2 = make_source_node(2, s2, true, "source_B");
+
+    // (1, 512)
+    int s3[] = {1, 512};
+    auto n3 = make_source_node(2, s3, true, "source_C");
+
+    //
+    int s4[] = {512, 128, 512};
+    auto n4 = make_source_node(3, s4, false, "source_D");
+
+    auto i1 = sum(n1, -1, true);
+    auto i2 = mul(n2, i1);
+    auto i3 = add(n3, i2);
+    auto i4 = mul(n4, i3);
+
+    backward_pass(i4);
 }
 
 // ============ Graph visualization demo ============
@@ -348,36 +376,35 @@ void viz_demo() {
     int sy[] = {1, 4};
     int sz[] = {4};
 
-    SourceNode x_node, y_node, z_node;
-    x_node.kind = NodeKind::Source;
-    x_node.h_meta = make_shape_data(3, sx);
-    x_node.h_requiers_grad = true;
+    auto x_node = make_shared<SourceNode>();
+    x_node->kind = NodeKind::Source;
+    x_node->h_meta = make_shape_data(3, sx);
+    x_node->h_requiers_grad = true;
 
-    y_node.kind = NodeKind::Source;
-    y_node.h_meta = make_shape_data(2, sy);
-    y_node.h_requiers_grad = false;
+    auto y_node = make_shared<SourceNode>();
+    y_node->kind = NodeKind::Source;
+    y_node->h_meta = make_shape_data(2, sy);
+    y_node->h_requiers_grad = false;
 
-    z_node.kind = NodeKind::Source;
-    z_node.h_meta = make_shape_data(1, sz);
-    z_node.h_requiers_grad = true;
+    auto z_node = make_shared<SourceNode>();
+    z_node->kind = NodeKind::Source;
+    z_node->h_meta = make_shape_data(1, sz);
+    z_node->h_requiers_grad = true;
 
     // mul(y, z) -> shape [1, 4]
     int mul_shape[] = {1, 4};
-    Node* mul_inputs[] = {&y_node, &z_node};
-    Node* mul_node = make_internal_node(OpType::Mul, mul_inputs, 2, mul_shape, 2);
-    // Node* mul_node = mul(&y_node, &z_node);
+    shared_ptr<Node> mul_inputs[] = {y_node, z_node};
+    auto mul_node = make_internal_node(OpType::Mul, mul_inputs, 2, mul_shape, 2);
 
     // add(x, mul_node) -> shape [2, 3, 4]  (broadcast)
     int add_shape[] = {2, 3, 4};
-    Node* add_inputs[] = {&x_node, mul_node};
-    Node* add_node = make_internal_node(OpType::Add, add_inputs, 2, add_shape, 3);
-    // Node* add_node = add(&x_node, mul_node);
+    shared_ptr<Node> add_inputs[] = {x_node, mul_node};
+    auto add_node = make_internal_node(OpType::Add, add_inputs, 2, add_shape, 3);
 
     // sum(add_node, dim=1) -> shape [2, 4]
     int sum_shape[] = {2, 4};
-    Node* sum_inputs[] = {add_node};
-    Node* sum_node = make_internal_node(OpType::Sum, sum_inputs, 1, sum_shape, 2);
-    // Node* sum_node = sum(add_node, 1);
+    shared_ptr<Node> sum_inputs[] = {add_node};
+    auto sum_node = make_internal_node(OpType::Sum, sum_inputs, 1, sum_shape, 2);
 
     visualize(sum_node);
     export_dot(sum_node, "graph.dot");
@@ -390,6 +417,5 @@ int main() {
     if (tests_failed == 0) {
         viz_demo();
     }
-
     return tests_failed > 0 ? 1 : 0;
 }

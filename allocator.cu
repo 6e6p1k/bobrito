@@ -1,6 +1,8 @@
 #include <cstddef>
+#include <cuda_runtime_api.h>
+#include <driver_types.h>
 #include <iostream>
-#include <memory>
+#include <stdexcept>
 #include "allocator.cuh"
 
 
@@ -8,15 +10,6 @@
 OutStatus Block::allocate_block(void)
 {
     if (cudaMalloc(&d_ptr, size) != cudaSuccess)
-    {
-        return OutStatus::Error;
-    }
-    return OutStatus::Success;
-}
-
-OutStatus Block::copy_data_to_block(const float* h_data, const size_t size)
-{
-    if (cudaMemcpy(d_ptr, h_data, size, cudaMemcpyHostToDevice) != cudaSuccess)
     {
         return OutStatus::Error;
     }
@@ -137,18 +130,10 @@ OutStatus Grid::free_single_grid(void)
 // </Grid struct>
 
 
-
 // <Memory pool class>
 MemoryPool& MemoryPool::call() {
     static MemoryPool instance; 
     return instance;
-}
-
-void MemoryPool::data_to_device(Block** d_ptr, float* h_data, int size)
-{
-    size_t bytes = (size_t)size * sizeof(float);
-    allocate(d_ptr, bytes);
-    (*d_ptr)->copy_data_to_block(h_data, bytes);
 }
 
 void MemoryPool::free(Block* d_ptr)
@@ -168,15 +153,6 @@ OutStatus MemoryPool::reset(void)
 
 }
 
-// private constructor
-MemoryPool::MemoryPool() 
-{
-    grids[0] = Grid::init(256, TINY_BLOCK);
-    grids[1] = Grid::init(128, SMALL_BLOCK);
-    grids[2] = Grid::init(64,  MEDIUM_BLOCK);
-    grids[3] = Grid::init(32,  LARGE_BLOCK);
-} 
-
 void MemoryPool::allocate(Block** dst, size_t bytes) {
     int tier = pick_grid_tier(bytes);
     Grid* grid = grids[tier];
@@ -192,6 +168,15 @@ void MemoryPool::allocate(Block** dst, size_t bytes) {
     grid = make_connect_grid(tier);
     grid->get_free(dst);
 }
+
+// private constructor
+MemoryPool::MemoryPool() 
+{
+    grids[0] = Grid::init(256, TINY_BLOCK);
+    grids[1] = Grid::init(128, SMALL_BLOCK);
+    grids[2] = Grid::init(64,  MEDIUM_BLOCK);
+    grids[3] = Grid::init(32,  LARGE_BLOCK);
+} 
     
 int MemoryPool::pick_grid_tier(size_t bytes) 
 {
@@ -217,6 +202,75 @@ Grid* MemoryPool::make_connect_grid(int tier)
 constexpr size_t MemoryPool::TIER_SIZES[];
 constexpr int MemoryPool::BLOCKS_PER_TIER[];
 // </Memory pool class>
+
+
+// <ContentData>
+float* ContentData::values()
+{
+    check_values();
+    return values_b_ptr->d_ptr;
+}
+
+float* ContentData::grad()
+{
+    check_grad();
+    return grad_b_ptr->d_ptr;
+}
+
+size_t ContentData::size()
+{
+    check_values();
+    return values_b_ptr->size;
+}
+
+float* ContentData::d_values_to_h()
+{
+    check_values();
+    float* dst = (float*)malloc(values_b_ptr->size);
+    cudaMemcpy(dst, values_b_ptr->d_ptr, values_b_ptr->size, cudaMemcpyDeviceToHost);
+    return dst;
+}
+
+float* ContentData::d_grad_to_h()
+{
+    check_grad();
+    float* dst = (float*)malloc(grad_b_ptr->size);
+    cudaMemcpy(dst, grad_b_ptr->d_ptr, grad_b_ptr->size, cudaMemcpyDeviceToHost);
+    return dst;
+}
+
+void ContentData::h_values_to_d(float* h_data, int size)
+{
+    size_t bytes = size * sizeof(float);
+    if (!values_b_ptr)
+    {
+        MemoryPool::call().allocate(&values_b_ptr, bytes);
+    }
+    cudaMemcpy(values_b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice);
+}
+
+void ContentData::h_grad_to_d(float* h_data, int size)
+{
+    size_t bytes = size * sizeof(float);
+    if (!grad_b_ptr)
+    {
+        MemoryPool::call().allocate(&grad_b_ptr, bytes);
+    }
+    cudaMemcpy(grad_b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice);
+}
+
+void ContentData::check_values(void)
+{
+    if (!values_b_ptr) throw logic_error("Values were never allocated.");
+    if (!(values_b_ptr->d_ptr)) throw logic_error("Values is empty.");
+}
+
+void ContentData::check_grad(void)
+{
+    if (!grad_b_ptr) throw logic_error("Grad was never allocated.");
+    if (!(grad_b_ptr->d_ptr)) throw logic_error("Grad is empty.");
+}
+// </ContentData>
 
 
 int main(void)

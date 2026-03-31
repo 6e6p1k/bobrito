@@ -17,7 +17,6 @@ struct Block
     Grid* mom = nullptr;
 
     OutStatus allocate_block(void);
-    OutStatus copy_data_to_block(const float* h_data, const size_t size);
     OutStatus free_block(void);
 };
 
@@ -50,11 +49,13 @@ public:
     // access
     static MemoryPool& call();
 
-    void data_to_device(Block** d_ptr, float* h_data, int size);
+    // allocate block on device
+    void allocate(Block** dst, size_t bytes);
 
+    // releases block on device
     void free(Block* d_ptr);
 
-    // remove all allocations 
+    // reset all allocations 
     OutStatus reset(void);
 
     // prevent copies
@@ -65,8 +66,6 @@ private:
     // private constructor
     MemoryPool();
 
-    void allocate(Block** dst, size_t bytes);
-    
     int pick_grid_tier(size_t bytes);
 
     Grid* make_connect_grid(int tier);
@@ -81,7 +80,29 @@ private:
     static constexpr int BLOCKS_PER_TIER[4] = {256, 128, 64, 32};
 };
 
+struct ContentData
+{
+    Block* values_b_ptr = nullptr;
+    Block* grad_b_ptr = nullptr;
 
+    float* values();
+    float* grad();
+    size_t size();
+    float* d_values_to_h();
+    float* d_grad_to_h();
+    void h_values_to_d(float* h_data, int size);
+    void h_grad_to_d(float* h_data, int size);
+
+    ~ContentData()
+    {
+        if (values_b_ptr) MemoryPool::call().free(values_b_ptr);
+        if (grad_b_ptr) MemoryPool::call().free(grad_b_ptr);
+    }
+
+    private:
+    void check_values(void);
+    void check_grad(void);
+};
 
 
 
