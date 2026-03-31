@@ -1,0 +1,252 @@
+#include <cstddef>
+#include <iostream>
+#include <memory>
+#include "allocator.cuh"
+
+
+// <Block struct>
+OutStatus Block::allocate_block(void)
+{
+    if (cudaMalloc(&d_ptr, size) != cudaSuccess)
+    {
+        return OutStatus::Error;
+    }
+    return OutStatus::Success;
+}
+
+OutStatus Block::copy_data_to_block(const float* h_data, const size_t size)
+{
+    if (cudaMemcpy(d_ptr, h_data, size, cudaMemcpyHostToDevice) != cudaSuccess)
+    {
+        return OutStatus::Error;
+    }
+    return OutStatus::Success;
+}
+
+OutStatus Block::free_block(void)
+{
+    if (cudaFree(d_ptr) != cudaSuccess)
+    {
+        return OutStatus::Error;
+    }
+    return OutStatus::Success;
+}
+// </Block struct>
+
+
+// <Grid struct>
+Grid* Grid::init(int max_blocks_num, int size_per_block)
+{
+    // size of the structure itself
+    size_t total_bytes = sizeof(Grid) + sizeof(Block) * max_blocks_num;
+
+    Grid* grid = (Grid*)malloc(total_bytes);
+    if (grid) 
+    {
+        grid->max_blocks_num = max_blocks_num;
+        
+        // init linked list of free blocks
+        Block* raw = grid->blocks;
+        // set every block but the last one
+        for (int i = 0; i < max_blocks_num - 1; i++) {
+            raw[i].next_free = &raw[i+1];
+            raw[i].size = size_per_block;
+            raw[i].allocate_block();
+            raw[i].mom = grid;
+        }
+        // set the last one
+        raw[max_blocks_num-1].next_free = nullptr;
+        raw[max_blocks_num-1].size = size_per_block;
+        raw[max_blocks_num-1].allocate_block();
+        raw[max_blocks_num-1].mom = grid;
+        // set next free to the first block
+        grid->next_free_block = &raw[0];
+    }
+    return grid;
+}
+
+OutStatus Grid::find_free(Block** dst, size_t min_size)
+{
+    Block* prev = nullptr;
+    Block* curr = next_free_block;
+    
+    while (curr != nullptr)
+    {
+        if (curr->size >= min_size)
+        {
+            // unlink
+            if (prev == nullptr)
+                next_free_block = curr->next_free;  // was head
+            else
+                prev->next_free = curr->next_free;  // middle/tail
+            
+            *dst = curr;
+            return OutStatus::BlockFound;
+        }
+        prev = curr;
+        curr = curr->next_free;
+    }
+    return OutStatus::BlockNotFound;
+}
+
+OutStatus Grid::get_free(Block** dst)
+{
+    if (!is_free) { return OutStatus::BlockNotFound; }
+    Block* curr = next_free_block;
+    Block* next = next_free_block->next_free;
+    *dst = curr;
+    next_free_block = next;
+    if (next_free_block == nullptr) is_free = false;
+    return OutStatus::BlockFound;
+}
+
+void Grid::free_block(Block* block)
+{
+    block->next_free = next_free_block;  // point to current head
+    next_free_block = block;             // become new head
+    is_free = true;
+}
+
+OutStatus Grid::free_grid(void)
+{
+    Grid* curr = this;
+    Grid* next = next_free_grid;
+    while (next != nullptr)
+    {
+        if (curr->free_single_grid() != OutStatus::Success) return OutStatus::Error;
+        free(curr);
+        curr = next;
+        next = next->next_free_grid;
+    }
+    if (curr->free_single_grid() != OutStatus::Success) return OutStatus::Error;
+    free(curr);
+    return OutStatus::Success;
+}
+
+OutStatus Grid::free_single_grid(void)
+{
+    for (int i = 0; i < max_blocks_num; i++)
+    {
+        if (blocks[i].free_block() != OutStatus::Success)
+        {
+            return OutStatus::Error;
+        }
+    }
+    return OutStatus::Success;
+}
+// </Grid struct>
+
+
+
+// <Memory pool class>
+MemoryPool& MemoryPool::call() {
+    static MemoryPool instance; 
+    return instance;
+}
+
+void MemoryPool::data_to_device(Block** d_ptr, float* h_data, int size)
+{
+    size_t bytes = (size_t)size * sizeof(float);
+    allocate(d_ptr, bytes);
+    (*d_ptr)->copy_data_to_block(h_data, bytes);
+}
+
+void MemoryPool::free(Block* d_ptr)
+{
+    d_ptr->mom->free_block(d_ptr);
+}
+
+// remove all allocations 
+OutStatus MemoryPool::reset(void) 
+{
+    for (int i = 0; i < 4; ++i)
+    {
+        if (grids[i]->free_grid() != OutStatus::Success) return OutStatus::Error;
+        grids[i] = Grid::init(BLOCKS_PER_TIER[i], TIER_SIZES[i]);
+    }
+    return OutStatus::Success;
+
+}
+
+// private constructor
+MemoryPool::MemoryPool() 
+{
+    grids[0] = Grid::init(256, TINY_BLOCK);
+    grids[1] = Grid::init(128, SMALL_BLOCK);
+    grids[2] = Grid::init(64,  MEDIUM_BLOCK);
+    grids[3] = Grid::init(32,  LARGE_BLOCK);
+} 
+
+void MemoryPool::allocate(Block** dst, size_t bytes) {
+    int tier = pick_grid_tier(bytes);
+    Grid* grid = grids[tier];
+    while (grid != nullptr)
+    {
+        if (grid->is_free)
+        {
+            grid->get_free(dst);
+            return;
+        }
+        grid = grid->next_free_grid;
+    }
+    grid = make_connect_grid(tier);
+    grid->get_free(dst);
+}
+    
+int MemoryPool::pick_grid_tier(size_t bytes) 
+{
+    if (bytes <= TINY_BLOCK)   return 0;
+    if (bytes <= SMALL_BLOCK)  return 1;
+    if (bytes <= MEDIUM_BLOCK) return 2;
+    return 3;
+}
+
+Grid* MemoryPool::make_connect_grid(int tier)
+{
+    // make grid
+    Grid* new_grid = Grid::init(BLOCKS_PER_TIER[tier], TIER_SIZES[tier]);
+
+    // link new grid into the beginning
+    Grid* tmp = grids[tier]->next_free_grid;
+    grids[tier]->next_free_grid = new_grid;
+    new_grid->next_free_grid = tmp;
+    
+    // output grid
+    return new_grid;
+}
+constexpr size_t MemoryPool::TIER_SIZES[];
+constexpr int MemoryPool::BLOCKS_PER_TIER[];
+// </Memory pool class>
+
+
+int main(void)
+{
+    cout<<"idi nahuy"<<endl;
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
