@@ -41,14 +41,14 @@ struct Node
     ContentPtr d_content;    // values + grad on device (shareable between fwd/bwd nodes)
     int use_count = 0;
     string label; // just to test, remove later
-
+    std::shared_ptr<Node> outputs[4]; // for grad
+    
     virtual ~Node() = default;
 };
 
 struct SourceNode : Node
 {
     bool h_requiers_grad = false;
-
     SourceNode() = default;
     SourceNode(float* data, int ndim, int* shape, int* strides = nullptr, bool requires_grad = false);
 };
@@ -57,7 +57,6 @@ struct InternalNode : Node
 {
     OpType op;  // operation that was used to create this node
     std::shared_ptr<Node> inputs[4];
-    std::shared_ptr<Node> outputs[4]; // for grad
     int num_inputs;
 };
 

@@ -9,3 +9,4 @@ void backward_viz(const std::shared_ptr<Node>& root);
 // work strangely
 void visualize_backward(const std::shared_ptr<Node>& root);
 void export_dot_backward(const std::shared_ptr<Node>& root, const char* filename);
+void export_dot_full(Node* start, const char* filename);

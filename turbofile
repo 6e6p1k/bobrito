@@ -1,50 +1,88 @@
-digraph BackwardGraph {
-    rankdir=TB;
+digraph FullGraph {
+    rankdir=BT;
     bgcolor="#FAFAFA";
-    pad=0.5;
-    nodesep=0.6;
-    ranksep=0.8;
+    pad=1.0;
+    nodesep=1.0;
+    ranksep=1.5;
     node [fontname="Helvetica" fontsize=12 margin="0.2,0.1"];
     edge [fontname="Helvetica" fontsize=9];
 
-    n4369709080 [
-        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">∇</FONT> <B> </B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 4</FONT></TD></TR></TABLE>>
-        shape=box style="rounded,filled" fillcolor="#EEEEEE"
-        penwidth=2 color="#EEEEEE30"
+    n4343441352 [penwidth=4 color="#FF5722"];
+
+    n4343440552 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2"><TR><TD><B>Source</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 1</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#388E3C">requires_grad</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#C8E6C9"
+        penwidth=2 color="#66BB6A"
     ];
-    n4369709080 -> n4369709336 [color="#666666" penwidth=1.5 arrowsize=0.8];
-    n4369709336 [
-        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">∇</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 3</FONT></TD></TR></TABLE>>
+    n4343440552 -> n4343441352 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343441352 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 4</FONT></TD></TR></TABLE>>
         shape=box style="rounded,filled" fillcolor="#CE93D8"
         penwidth=2 color="#CE93D830"
     ];
-    n4369709080 -> n4369709592 [color="#666666" penwidth=1.5 arrowsize=0.8];
-    n4369709592 [
-        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">∇</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 3</FONT></TD></TR></TABLE>>
+    n4343441048 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">+</FONT> <B>Add</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 3</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#4FC3F7"
+        penwidth=2 color="#4FC3F730"
+    ];
+    n4343440360 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2"><TR><TD><B>Source</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 1</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#388E3C">requires_grad</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#C8E6C9"
+        penwidth=2 color="#66BB6A"
+    ];
+    n4343440360 -> n4343441048 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343440744 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 2</FONT></TD></TR></TABLE>>
         shape=box style="rounded,filled" fillcolor="#CE93D8"
         penwidth=2 color="#CE93D830"
     ];
-    n4369709592 -> n4369709896 [color="#666666" penwidth=1.5 arrowsize=0.8];
-    n4369709896 [
-        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">∇</FONT> <B>Skip</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 2</FONT></TD></TR></TABLE>>
-        shape=box style="rounded,filled" fillcolor="#EEEEEE"
-        penwidth=2 color="#EEEEEE30"
+    n4343440168 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2"><TR><TD><B>Source</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 1</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#388E3C">requires_grad</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#C8E6C9"
+        penwidth=2 color="#66BB6A"
     ];
-    n4369709592 -> n4369710152 [color="#666666" penwidth=1.5 arrowsize=0.8];
-    n4369710152 [
-        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">∇</FONT> <B>Skip</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 2</FONT></TD></TR></TABLE>>
-        shape=box style="rounded,filled" fillcolor="#EEEEEE"
-        penwidth=2 color="#EEEEEE30"
+    n4343440168 -> n4343440744 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343438616 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2"><TR><TD><B>Source</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 1</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#388E3C">requires_grad</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#C8E6C9"
+        penwidth=2 color="#66BB6A"
     ];
-    n4369710152 -> n35953606680 [color="#666666" penwidth=1.5 arrowsize=0.8];
-    n35953606680 [
-        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">∇</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 1</FONT></TD></TR></TABLE>>
+    n4343438616 -> n4343440744 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343440744 -> n4343441048 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343441048 -> n4343441352 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343441352 -> n4343441704 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343441704 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 3</FONT></TD></TR></TABLE>>
         shape=box style="rounded,filled" fillcolor="#CE93D8"
         penwidth=2 color="#CE93D830"
     ];
-    n4369710152 -> n35953606936 [color="#666666" penwidth=1.5 arrowsize=0.8];
-    n35953606936 [
-        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">∇</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 1</FONT></TD></TR></TABLE>>
+    n4343441352 -> n4343441960 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343441960 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 3</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#CE93D8"
+        penwidth=2 color="#CE93D830"
+    ];
+    n4343441960 -> n4343442264 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343442264 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">→</FONT> <B>Skip</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 2</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#EEEEEE"
+        penwidth=2 color="#EEEEEE30"
+    ];
+    n4343441960 -> n4343442520 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343442520 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">→</FONT> <B>Skip</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 2</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#EEEEEE"
+        penwidth=2 color="#EEEEEE30"
+    ];
+    n4343442520 -> n4343442808 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n4343442808 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 1</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#CE93D8"
+        penwidth=2 color="#CE93D830"
+    ];
+    n4343442520 -> n46556790808 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n46556790808 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">use_count: 1</FONT></TD></TR></TABLE>>
         shape=box style="rounded,filled" fillcolor="#CE93D8"
         penwidth=2 color="#CE93D830"
     ];

@@ -363,7 +363,7 @@ TEST(backward_pass) {
 
     backward_pass(i4);
     auto bwd_node = make_source_node(3, s4, false, "bwd_node");
-    build_backward(i4, bwd_node, 4);
+    // build_backward(i4, bwd_node, 4);
 }
 
 // ============ Graph visualization demo ============

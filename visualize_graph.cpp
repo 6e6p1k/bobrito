@@ -1,6 +1,7 @@
 #include "grad.h"
 #include "graph_viz.h"
 #include <algorithm>
+#include <machine/limits.h>
 #include <memory>
 
 
@@ -11,6 +12,19 @@ std::shared_ptr<SourceNode> make_source_node(int ndim, int* shape, bool requires
     node->h_requiers_grad = requires_grad;
     node->use_count++;
     return node;
+}
+
+void post_order_dfs(Node* node, unordered_set<Node*>& visited, vector<Node*>& order) {
+    if (visited.count(node)) return;
+    visited.insert(node);
+
+    if (node->kind == NodeKind::Internal) {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+        for (int i = 0; i < inode->num_inputs; i++)
+            post_order_dfs(inode->inputs[i].get(), visited, order);
+    }
+
+    order.push_back(node);
 }
 
 int main(void) {
@@ -42,13 +56,20 @@ int main(void) {
     auto i4 = mul(n4, i3);
 
     // auto bwd_node = std::make_shared<InternalNode>();
-    auto node = static_cast<InternalNode*>(i4.get());
-    auto bwd_node = make_internal_node_like(node);
-    bwd_node->op = OpType::Empty;
-    bwd_node->label = "bwd_node";
-    build_backward(i4, bwd_node, 4);
-    export_dot_backward(bwd_node, "turbofile");
-
+    // auto node = static_cast<InternalNode*>(i4.get());
+    // auto bwd_node = make_internal_node_like(node);
+    // bwd_node->op = OpType::Empty;
+    // bwd_node->label = "bwd_node";
+    std::shared_ptr<InternalNode> q = std::dynamic_pointer_cast<InternalNode>(i4);
+    build_backward(i4, q, 4);
+    export_dot_full(i4.get(), "turbofile");
+    std::shared_ptr<InternalNode> i4_out_1 = std::dynamic_pointer_cast<InternalNode>(q->outputs[0]);
+    cout<<i4_out_1->label<<endl;
+    cout<<i4_out_1->inputs[0]->label<<endl;
+    // export_dot_backward(bwd_node, "turbofile");
+    // unordered_set<Node*> visited;
+    // vector<Node*> order;
+    // post_order_dfs(i4.get(), visited, order);
     // visualize(i4); // visualize forward
     // export_dot(i4, "graph.dot"); // export to .dot
     // backward_viz(bwd_node); // visualize backward

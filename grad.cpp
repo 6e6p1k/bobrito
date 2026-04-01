@@ -112,7 +112,9 @@ std::shared_ptr<Node> make_internal_node(OpType op, std::shared_ptr<Node> inputs
     {
         node->inputs[i] = inputs[i];
         node->use_count += inputs[i]->use_count;
-        cout<<"Node ["<<inputs[i]->label<<"] has "<<inputs[i]->use_count<<" labels"<<endl;
+        // cout<<"Node ["<<inputs[i]->label<<"] has "<<inputs[i]->use_count<<" labels"<<endl;
+        if (inputs[i]->outputs[0] == nullptr) inputs[i]->outputs[0] = node;
+        else inputs[i]->outputs[1] = node;
     }
     return node;
 }
@@ -180,7 +182,9 @@ std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b,
     auto node = make_internal_node(
         op, inputs, 2, res_shape, res_ndim
     );
-    node->label = "( " + a->label + " " + opToString(op) + " " + b->label + " )"; // remove later
+    // <remove later>
+    node->label = "( " + a->label + " " + opToString(op) + " " + b->label + " )"; 
+    // </remove later>
     return node;
 }
 
@@ -329,36 +333,29 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 bwd_b->inputs[0] = bwd_node;
                 bwd_b->label = "bwd version of " + inode->inputs[1]->label;
                 bwd_b->use_count = use_count;
-                if (bwd_b->kind != NodeKind::Source)
-                    build_backward(inode->inputs[1], bwd_b, use_count);
+                build_backward(inode->inputs[1], bwd_b, use_count);
             }
             break;
             
         case OpType::Mul:
             {
-                // if (inode->inputs[0]->kind != NodeKind::Source)
-                // {
-                    auto bwd_a = copy_to_internal_node(inode->inputs[0]);
-                    bwd_node->outputs[0] = bwd_a;
-                    bwd_a->op = OpType::Mul;
-                    bwd_a->inputs[0] = bwd_node;
-                    bwd_a->inputs[1] = inode->inputs[1];
-                    bwd_a->label = "bwd version of " + inode->inputs[0]->label;
-                    bwd_a->use_count = use_count;
-                    build_backward(inode->inputs[0], bwd_a, use_count);
-                // }
+                auto bwd_a = copy_to_internal_node(inode->inputs[0]);
+                bwd_node->outputs[0] = bwd_a;
+                bwd_a->op = OpType::Mul;
+                bwd_a->inputs[0] = bwd_node;
+                bwd_a->inputs[1] = fwd_node;
+                bwd_a->label = "bwd version of " + inode->inputs[0]->label;
+                bwd_a->use_count = use_count;
+                build_backward(inode->inputs[0], bwd_a, use_count);
 
-                // if (inode->inputs[1]->kind != NodeKind::Source)
-                // {
                 auto bwd_b = copy_to_internal_node(inode->inputs[1]);
                 bwd_node->outputs[1] = bwd_b;
                 bwd_b->op = OpType::Mul;
                 bwd_b->inputs[0] = bwd_node;
-                bwd_b->inputs[1] = inode->inputs[0];
+                bwd_b->inputs[1] = fwd_node;
                 bwd_b->label = "bwd version of " + inode->inputs[1]->label;
                 bwd_b->use_count = use_count;
                 build_backward(inode->inputs[1], bwd_b, use_count);
-                // }
             }
             break;
             

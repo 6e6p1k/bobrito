@@ -38,7 +38,7 @@ static const char* op_symbol(OpType op) {
         case OpType::Max:    return "↑";
         case OpType::Min:    return "↓";
         case OpType::ReLU:   return " ";
-        case OpType::Skip:   return "->";
+        case OpType::Skip:   return "→";
         case OpType::Empty:  return " ";
     }
     return "?";
@@ -318,12 +318,12 @@ static void dot_emit_node(ofstream& out, Node* node, unordered_set<Node*>& visit
 
 void export_dot(const std::shared_ptr<Node>& root, const char* filename) {
     ofstream out(filename);
-    out << "digraph ComputationGraph {\n"
+    out << "digraph FullGraph {\n"
         << "    rankdir=BT;\n"
         << "    bgcolor=\"#FAFAFA\";\n"
-        << "    pad=0.5;\n"
-        << "    nodesep=0.6;\n"
-        << "    ranksep=0.8;\n"
+        << "    pad=1.0;\n"
+        << "    nodesep=1.0;\n"
+        << "    ranksep=1.5;\n"
         << "    node [fontname=\"Helvetica\" fontsize=12 margin=\"0.2,0.1\"];\n"
         << "    edge [fontname=\"Helvetica\" fontsize=9];\n\n";
 
@@ -583,4 +583,149 @@ void export_dot_backward(const std::shared_ptr<Node>& root, const char* filename
 
     cout << "Backward graph written to " << filename << endl;
     cout << "Render with:  dot -Tpng " << filename << " -o backward.png" << endl;
+}
+
+static string escape_html(const string& s) {
+    string out;
+    for (char c : s) {
+        if      (c == '<') out += "&lt;";
+        else if (c == '>') out += "&gt;";
+        else if (c == '&') out += "&amp;";
+        else out += c;
+    }
+    return out;
+}
+
+static void dot_emit_node_label(ofstream& out, Node* node) {
+    string id = "n" + to_string((uintptr_t)node);
+    string shape_s = shape_str(node->h_meta);
+
+    if (node->kind == NodeKind::Internal) {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+        string sym = escape_html(op_symbol(inode->op));
+        string name = op_name(inode->op);
+        const char* color = dot_op_color(inode->op);
+
+        out << "    " << id << " [\n"
+            << "        label=<"
+            << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"4\">"
+            << "<TR><TD COLSPAN=\"2\"><FONT POINT-SIZE=\"18\">" << sym << "</FONT> <B>" << name << "</B></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">use_count: " << node->use_count << "</FONT></TD></TR>"
+            << "</TABLE>>\n"
+            << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
+            << "        penwidth=2 color=\"" << color << "30\"\n"
+            << "    ];\n";
+    } else {
+        SourceNode* snode = static_cast<SourceNode*>(node);
+        const char* color = snode->h_requiers_grad ? "#C8E6C9" : "#E0E0E0";
+        const char* border = snode->h_requiers_grad ? "#66BB6A" : "#BDBDBD";
+
+        out << "    " << id << " [\n"
+            << "        label=<"
+            << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\">"
+            << "<TR><TD><B>Source</B></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">use_count: " << snode->use_count << "</FONT></TD></TR>";
+        if (snode->h_requiers_grad)
+            out << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"9\" COLOR=\"#388E3C\">requires_grad</FONT></TD></TR>";
+        out << "</TABLE>>\n"
+            << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
+            << "        penwidth=2 color=\"" << border << "\"\n"
+            << "    ];\n";
+    }
+}
+
+static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& visited_nodes, unordered_set<Node*>& visited_edges) {
+    // emit node label only once
+    if (!visited_nodes.count(node)) {
+        visited_nodes.insert(node);
+        dot_emit_node_label(out, node);
+    }
+
+    // explore connections only once
+    if (visited_edges.count(node)) return;
+    visited_edges.insert(node);
+
+    string id = "n" + to_string((uintptr_t)node);
+
+    if (node->kind == NodeKind::Internal) {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+
+        // follow inputs
+        for (int i = 0; i < inode->num_inputs; i++) {
+            if (!inode->inputs[i]) continue;
+            // string child_id = "n" + to_string((uintptr_t)inode->inputs[i].get());
+            // out << "    " << child_id << " -> " << id
+            //     << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+            dot_emit_node_full(out, inode->inputs[i].get(), visited_nodes, visited_edges);
+        }
+
+        // follow outputs
+        int num_outputs = 0;
+        while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
+        for (int i = 0; i < num_outputs; i++) {
+            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
+            out << "    " << id << " -> " << child_id
+                << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+            dot_emit_node_full(out, inode->outputs[i].get(), visited_nodes, visited_edges);
+        }
+    } else {
+        SourceNode* snode = static_cast<SourceNode*>(node);
+
+        // follow outputs from source too
+        int num_outputs = 0;
+        while (num_outputs < 4 && snode->outputs[num_outputs]) num_outputs++;
+        for (int i = 0; i < num_outputs; i++) {
+            string child_id = "n" + to_string((uintptr_t)snode->outputs[i].get());
+            out << "    " << id << " -> " << child_id
+                << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+            dot_emit_node_full(out, snode->outputs[i].get(), visited_nodes, visited_edges);
+        }
+    }
+}
+
+void find_roots(Node* node, unordered_set<Node*>& visited, vector<Node*>& roots) {
+    if (visited.count(node)) return;
+    visited.insert(node);
+    
+    if (node->kind == NodeKind::Source) {
+        roots.push_back(node);
+        return;
+    }
+    
+    InternalNode* inode = static_cast<InternalNode*>(node);
+    for (int i = 0; i < inode->num_inputs; i++)
+        find_roots(inode->inputs[i].get(), visited, roots);
+}
+
+void export_dot_full(Node* start, const char* filename) {
+    unordered_set<Node*> visited_roots;
+    vector<Node*> roots;
+    find_roots(start, visited_roots, roots);
+
+    ofstream out(filename);
+    out << "digraph FullGraph {\n"
+        << "    rankdir=BT;\n"
+        << "    bgcolor=\"#FAFAFA\";\n"
+        << "    pad=1.0;\n"
+        << "    nodesep=1.0;\n"
+        << "    ranksep=1.5;\n"
+        << "    node [fontname=\"Helvetica\" fontsize=12 margin=\"0.2,0.1\"];\n"
+        << "    edge [fontname=\"Helvetica\" fontsize=9];\n\n";
+
+    // highlight starting node
+    string start_id = "n" + to_string((uintptr_t)start);
+    out << "    " << start_id << " [penwidth=4 color=\"#FF5722\"];\n\n";
+
+    unordered_set<Node*> visited_nodes;
+    unordered_set<Node*> visited_edges;
+    for (auto* root : roots)
+        dot_emit_node_full(out, root, visited_nodes, visited_edges);
+
+    out << "}\n";
+    out.close();
+
+    cout << "Full graph written to " << filename << endl;
+    cout << "Render with:  dot -Tpdf " << filename << " -o full.pdf" << endl;
 }
