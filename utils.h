@@ -22,11 +22,16 @@ struct BroadcastInfo {
     int ndim;
 };
 
+namespace broadcast
+{
+BroadcastInfo elemwise(int* a_shape, int* b_shape, int* a_strides, int* b_strides, int* out_shape, int out_ndim);
+BroadcastInfo elemwise(InternalNode* node);
+}
+
 struct MatmulDims {
     int M, K, N, batch;
     int* res_shape;
 };
-
 
 namespace check_shape_return_out_shape 
 {

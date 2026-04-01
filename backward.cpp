@@ -1,79 +1,91 @@
 #include <iostream>
+#include <memory>
+#include <stdexcept>
 #include <unordered_set>
+#include "backward.h"
+#include <vector>
 
 #include "node.h"
 
 
-void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node, int use_count) {
+void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node, int param_count) {
     
     if (fwd_node->kind == NodeKind::Source) {
         SourceNode* snode = static_cast<SourceNode*>(fwd_node.get());
         if (!snode->h_requiers_grad) return;
-        use_count--;
+        param_count--;
         // accumulate grad into snode's grad buffer
         return;
     }
 
-    InternalNode* inode = static_cast<InternalNode*>(fwd_node.get());
-    use_count--;
-    if (use_count < 0) return;
+    shared_ptr<InternalNode> inode = dynamic_pointer_cast<InternalNode>(fwd_node);
+    param_count--;
+    if (param_count < 0) return;
     
     switch (inode->op) {
         case OpType::Add:
             {
                 auto bwd_a = copy_to_internal_node(inode->inputs[0]);
-                bwd_node->outputs[0] = bwd_a;
+                bwd_node->outputs[0] = bwd_a; // connect via outputs
+                bwd_a->num_inputs = 1;
+                bwd_a->inputs[0] = bwd_node; // connect via inputs
                 bwd_a->op = OpType::Skip;
-                bwd_a->inputs[0] = bwd_node;
-                bwd_a->use_count = use_count;
-                build_backward(inode->inputs[0], bwd_a, use_count);
+                bwd_a->param_count = param_count;
+                build_backward(inode->inputs[0], bwd_a, param_count);
                 
                 auto bwd_b = copy_to_internal_node(inode->inputs[1]);
-                bwd_node->outputs[1] = bwd_b;
+                bwd_node->outputs[1] = bwd_b; // connect via outputs
+                bwd_b->num_inputs = 1;
+                bwd_b->inputs[0] = bwd_node; // connect via inputs
                 bwd_b->op = OpType::Skip;
-                bwd_b->inputs[0] = bwd_node;
-                bwd_b->use_count = use_count;
-                build_backward(inode->inputs[1], bwd_b, use_count);
+                bwd_b->param_count = param_count;
+                build_backward(inode->inputs[1], bwd_b, param_count);
             }
             break;
             
         case OpType::Mul:
             {
                 auto bwd_a = copy_to_internal_node(inode->inputs[0]);
-                bwd_node->outputs[0] = bwd_a;
+                cout<<"bwd_a->label="<<bwd_a->label<<endl;
                 bwd_a->op = OpType::Mul;
-                bwd_a->inputs[0] = bwd_node;
-                bwd_a->inputs[1] = fwd_node;
-                bwd_a->use_count = use_count;
-                build_backward(inode->inputs[0], bwd_a, use_count);
+                bwd_node->outputs[0] = bwd_a;
+                bwd_a->num_inputs = 1;
+                bwd_a->inputs[0] = bwd_node;           // upstream gradient
+                // bwd_a->inputs[1] = inode->inputs[1];   // the OTHER input (b)
+                // cout<<"bwd_a->inputs: "<<bwd_a->inputs[0]->label<<" and "<<bwd_a->inputs[1]->label<<endl;
+                bwd_a->param_count = param_count;
+                build_backward(inode->inputs[0], bwd_a, param_count);
 
                 auto bwd_b = copy_to_internal_node(inode->inputs[1]);
-                bwd_node->outputs[1] = bwd_b;
+                cout<<"bwd_b->label="<<bwd_b->label<<endl;
                 bwd_b->op = OpType::Mul;
-                bwd_b->inputs[0] = bwd_node;
-                bwd_b->inputs[1] = fwd_node;
-                bwd_b->use_count = use_count;
-                build_backward(inode->inputs[1], bwd_b, use_count);
+                bwd_node->outputs[1] = bwd_b;
+                bwd_b->num_inputs = 1;
+                bwd_b->inputs[0] = bwd_node;           // upstream gradient
+                // bwd_b->inputs[1] = inode->inputs[0];   // the OTHER input (a)
+                // cout<<"bwd_b->inputs: "<<bwd_b->inputs[0]->label<<" and "<<bwd_b->inputs[1]->label<<endl;
+                bwd_b->param_count = param_count;
+                build_backward(inode->inputs[1], bwd_b, param_count);
             }
             break;
 
         case OpType::MatMul:
             {
                 auto bwd_a = copy_to_internal_node(inode->inputs[0]);
-                bwd_node->outputs[0] = bwd_a;
                 bwd_a->op = OpType::MatMul;
+                bwd_node->outputs[0] = bwd_a;
                 bwd_a->inputs[0] = bwd_node; // gradient
                 bwd_a->inputs[1] = fwd_node; // needs transpose
-                bwd_a->use_count = use_count;
-                build_backward(inode->inputs[0], bwd_a, use_count);
+                bwd_a->param_count = param_count;
+                build_backward(inode->inputs[0], bwd_a, param_count);
 
                 auto bwd_b = copy_to_internal_node(inode->inputs[1]);
-                bwd_node->outputs[1] = bwd_b;
                 bwd_b->op = OpType::MatMul;
+                bwd_node->outputs[1] = bwd_b;
                 bwd_b->inputs[0] = fwd_node; // needs transpose
                 bwd_b->inputs[1] = fwd_node; // gradient
-                bwd_b->use_count = use_count;
-                build_backward(inode->inputs[1], bwd_b, use_count);
+                bwd_b->param_count = param_count;
+                build_backward(inode->inputs[1], bwd_b, param_count);
             }
             break;
 
@@ -85,25 +97,16 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
     }
 }
 
-// <Topological sort>
-void build_topo(Node* node, unordered_set<Node*>& visited, vector<InternalNode*>& inodes, vector<SourceNode*>& snodes)
+void _backward(shared_ptr<Node> node)
 {
-    if (visited.count(node)) return;
-    visited.insert(node);
-
-    if (node->kind == NodeKind::Internal) 
+    // post_order_dfs(i4.get(), visited, order);
+    if (node->kind == NodeKind::Source) 
     {
-        InternalNode* inode = static_cast<InternalNode*>(node);
-        for (int i = 0; i < inode->num_inputs; i++)
-            build_topo(inode->inputs[i].get(), visited, inodes, snodes);
-        inodes.push_back(inode);
+        throw logic_error("Cannot use .backward() on this tensor.");
     }
-    else {
-        snodes.push_back(static_cast<SourceNode*>(node));
-    }
-    
+    shared_ptr<InternalNode> bwd_node = dynamic_pointer_cast<InternalNode>(node);
+    build_backward(node, bwd_node, node->param_count);
 }
-// </Topological sort>
 
 
 void backward_pass(shared_ptr<Node> node)
@@ -111,7 +114,7 @@ void backward_pass(shared_ptr<Node> node)
     unordered_set<Node*> visited;
     vector<InternalNode*> inodes;
     vector<SourceNode*> snodes;
-    build_topo(node.get(), visited, inodes, snodes);
+    _build_topo(node.get(), visited, inodes, snodes);
 
     cout<<"Overview:"<<endl;
     for (int i = 0; i < snodes.size(); ++i)

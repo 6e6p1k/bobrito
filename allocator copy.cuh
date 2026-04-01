@@ -1,6 +1,9 @@
+#pragma once
+
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <mutex>
 
 struct Grid;
 

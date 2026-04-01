@@ -129,7 +129,7 @@ static BoxLines make_box(Node* node) {
         rows.push_back({string(clr::dim) + "Strides:" + clr::reset,
                         string(clr::dim) + strides_str(node->h_meta) + clr::reset});
         rows.push_back({string(clr::dim) + "Uses:" + clr::reset,
-                        string(clr::cyan) + to_string(node->use_count) + clr::reset});
+                        string(clr::cyan) + to_string(node->param_count) + clr::reset});
     } else {
         border_color = clr::green;
         SourceNode* snode = static_cast<SourceNode*>(node);
@@ -139,7 +139,7 @@ static BoxLines make_box(Node* node) {
         rows.push_back({string(clr::dim) + "Strides:" + clr::reset,
                         string(clr::dim) + strides_str(node->h_meta) + clr::reset});
         rows.push_back({string(clr::dim) + "Uses:" + clr::reset,
-                        string(clr::cyan) + to_string(snode->use_count) + clr::reset});
+                        string(clr::cyan) + to_string(snode->param_count) + clr::reset});
         if (snode->h_requiers_grad)
             rows.push_back({string(clr::bgreen) + "requires_grad" + clr::reset, ""});
     }
@@ -281,7 +281,7 @@ static void dot_emit_node(ofstream& out, Node* node, unordered_set<Node*>& visit
             << "<TR><TD COLSPAN=\"2\"><FONT POINT-SIZE=\"18\">" << sym << "</FONT> <B>" << name << "</B></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Strides: " << strides_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">Uses: " << node->use_count << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">Uses: " << node->param_count << "</FONT></TD></TR>"
             << "</TABLE>>\n"
             << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
             << "        penwidth=2 color=\"" << color << "30\"\n"
@@ -306,7 +306,7 @@ static void dot_emit_node(ofstream& out, Node* node, unordered_set<Node*>& visit
             << "<TR><TD><B>Source</B></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Strides: " << strides_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">Uses: " << snode->use_count << "</FONT></TD></TR>";
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">Uses: " << snode->param_count << "</FONT></TD></TR>";
         if (snode->h_requiers_grad)
             out << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"9\" COLOR=\"#388E3C\">requires_grad</FONT></TD></TR>";
         out << "</TABLE>>\n"
@@ -377,7 +377,7 @@ void backward_viz(const std::shared_ptr<Node>& root) {
             cout << "       " << clr::dim << "Strides: " << clr::reset
                  << clr::dim << strides_str(node->h_meta) << clr::reset << endl;
             cout << "       " << clr::dim << "Uses:    " << clr::reset
-                 << clr::cyan << node->use_count << clr::reset << endl;
+                 << clr::cyan << node->param_count << clr::reset << endl;
 
             // show which inputs this node pulls grad from
             cout << "       " << clr::dim << "inputs:  " << clr::reset;
@@ -402,7 +402,7 @@ void backward_viz(const std::shared_ptr<Node>& root) {
             cout << "       " << clr::dim << "Strides: " << clr::reset
                  << clr::dim << strides_str(node->h_meta) << clr::reset << endl;
             cout << "       " << clr::dim << "Uses:    " << clr::reset
-                 << clr::cyan << snode->use_count << clr::reset << endl;
+                 << clr::cyan << snode->param_count << clr::reset << endl;
             if (snode->h_requiers_grad)
                 cout << "       " << clr::bgreen << "requires_grad" << clr::reset << endl;
         }
@@ -435,8 +435,8 @@ static void draw_backward_node(Node* node, const string& prefix, bool is_last, b
     vector<pair<string,string>> rows;
     rows.push_back({string(clr::dim) + "Shape:" + clr::reset,
                     string(clr::yellow) + shape_s + clr::reset});
-    rows.push_back({string(clr::dim) + "use_count:" + clr::reset,
-                    string(clr::cyan) + to_string(node->use_count) + clr::reset});
+    rows.push_back({string(clr::dim) + "param_count:" + clr::reset,
+                    string(clr::cyan) + to_string(node->param_count) + clr::reset});
 
     // compute width
     int title_vis = visible_len(title);
@@ -529,7 +529,7 @@ static void dot_emit_backward_node(ofstream& out, Node* node, unordered_set<Node
             << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"4\">"
             << "<TR><TD COLSPAN=\"2\"><FONT POINT-SIZE=\"18\">∇</FONT> <B>" << name << "</B></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">use_count: " << node->use_count << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">param_count: " << node->param_count << "</FONT></TD></TR>"
             << "</TABLE>>\n"
             << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
             << "        penwidth=2 color=\"" << color << "30\"\n"
@@ -554,7 +554,7 @@ static void dot_emit_backward_node(ofstream& out, Node* node, unordered_set<Node
             << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\">"
             << "<TR><TD><B>∇Source</B></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">use_count: " << snode->use_count << "</FONT></TD></TR>";
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">param_count: " << snode->param_count << "</FONT></TD></TR>";
         if (snode->h_requiers_grad)
             out << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"9\" COLOR=\"#388E3C\">requires_grad</FONT></TD></TR>";
         out << "</TABLE>>\n"
@@ -611,7 +611,7 @@ static void dot_emit_node_label(ofstream& out, Node* node) {
             << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"4\">"
             << "<TR><TD COLSPAN=\"2\"><FONT POINT-SIZE=\"18\">" << sym << "</FONT> <B>" << name << "</B></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">use_count: " << node->use_count << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">param_count: " << node->param_count << "</FONT></TD></TR>"
             << "</TABLE>>\n"
             << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
             << "        penwidth=2 color=\"" << color << "30\"\n"
@@ -626,7 +626,7 @@ static void dot_emit_node_label(ofstream& out, Node* node) {
             << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\">"
             << "<TR><TD><B>Source</B></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">use_count: " << snode->use_count << "</FONT></TD></TR>";
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">param_count: " << snode->param_count << "</FONT></TD></TR>";
         if (snode->h_requiers_grad)
             out << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"9\" COLOR=\"#388E3C\">requires_grad</FONT></TD></TR>";
         out << "</TABLE>>\n"
@@ -655,9 +655,9 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
         // follow inputs
         for (int i = 0; i < inode->num_inputs; i++) {
             if (!inode->inputs[i]) continue;
-            // string child_id = "n" + to_string((uintptr_t)inode->inputs[i].get());
-            // out << "    " << child_id << " -> " << id
-            //     << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+            string child_id = "n" + to_string((uintptr_t)inode->inputs[i].get());
+            out << "    " << child_id << " -> " << id
+                << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
             dot_emit_node_full(out, inode->inputs[i].get(), visited_nodes, visited_edges);
         }
 
@@ -665,9 +665,9 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
         int num_outputs = 0;
         while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
         for (int i = 0; i < num_outputs; i++) {
-            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
-            out << "    " << id << " -> " << child_id
-                << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+            // string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
+            // out << "    " << id << " -> " << child_id
+            //     << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
             dot_emit_node_full(out, inode->outputs[i].get(), visited_nodes, visited_edges);
         }
     } else {
@@ -677,10 +677,10 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
         int num_outputs = 0;
         while (num_outputs < 4 && snode->outputs[num_outputs]) num_outputs++;
         for (int i = 0; i < num_outputs; i++) {
-            string child_id = "n" + to_string((uintptr_t)snode->outputs[i].get());
-            out << "    " << id << " -> " << child_id
-                << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
-            dot_emit_node_full(out, snode->outputs[i].get(), visited_nodes, visited_edges);
+            // string child_id = "n" + to_string((uintptr_t)snode->outputs[i].get());
+            //             // out << "    " << id << " -> " << child_id
+                        //     << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+                                    dot_emit_node_full(out, snode->outputs[i].get(), visited_nodes, visited_edges);
         }
     }
 }

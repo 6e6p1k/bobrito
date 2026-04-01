@@ -23,6 +23,41 @@ int numel(const int ndim, const int* shape) {
 
 }
 
+namespace broadcast
+{
+BroadcastInfo elemwise(int* a_shape, int* b_shape, int* a_strides, int* b_strides, int* out_shape, int out_ndim)
+{
+    BroadcastInfo info;
+    info.ndim = out_ndim;
+    for (int i = 0; i < out_ndim; i++) {
+        info.out_shape[i] = out_shape[i];
+        // if input dim == 1 (broadcast), stride = 0, else real stride
+        info.a_strides[i] = (a_shape[i] == 1) ? 0 : a_strides[i];
+        info.b_strides[i] = (b_shape[i] == 1) ? 0 : b_strides[i];
+    }
+    return info;
+}
+
+BroadcastInfo elemwise(InternalNode* node)
+{
+    // input node MUST have exactly 2 inputs
+    // a_info
+    int* a_shape = node->inputs[0]->h_meta->shape();
+    int* a_strides = node->inputs[0]->h_meta->strides();
+    // b_info
+    int* b_shape = node->inputs[1]->h_meta->shape();
+    int* b_strides = node->inputs[1]->h_meta->strides();
+    // out_info
+    int* out_shape = node->h_meta->shape();
+    int out_ndim = node->h_meta->ndim;
+
+    return elemwise(a_shape, b_shape, a_strides, b_strides, out_shape, out_ndim);
+}
+
+
+
+}
+
 namespace check_shape_return_out_shape 
 {
 

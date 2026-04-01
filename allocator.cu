@@ -34,9 +34,12 @@ Grid* Grid::init(int max_blocks_num, int size_per_block)
     size_t total_bytes = sizeof(Grid) + sizeof(Block) * max_blocks_num;
 
     Grid* grid = (Grid*)malloc(total_bytes);
-    if (grid) 
+    if (grid)
     {
         grid->max_blocks_num = max_blocks_num;
+        grid->is_free = true;
+        grid->next_free_block = nullptr;
+        grid->next_free_grid = nullptr;
         
         // init linked list of free blocks
         Block* raw = grid->blocks;
@@ -165,8 +168,10 @@ void MemoryPool::allocate(Block** dst, size_t bytes) {
         }
         grid = grid->next_free_grid;
     }
+
+    // not free grids -> make a new one
     grid = make_connect_grid(tier);
-    grid->get_free(dst);
+    OutStatus status = grid->get_free(dst);    
 }
 
 // private constructor
@@ -205,20 +210,51 @@ constexpr int MemoryPool::BLOCKS_PER_TIER[];
 
 
 // <ContentData>
+void ContentData::allocate_values(int size)
+{
+    if (!values_b_ptr)
+    {
+        MemoryPool::call().allocate(&values_b_ptr, size * sizeof(float));
+    }
+}
+
+void ContentData::allocate_grad(int size)
+{
+    if (!grad_b_ptr)
+    {
+        MemoryPool::call().allocate(&grad_b_ptr, size * sizeof(float));
+    }
+}
+
+void ContentData::allocate(int size)
+{
+    allocate_values(size);
+    allocate_grad(size);
+}
+
 float* ContentData::values()
 {
+    // Returns pointer to values on device.
     check_values();
     return values_b_ptr->d_ptr;
 }
 
 float* ContentData::grad()
 {
+    // Returns pointer to grad on device.
     check_grad();
     return grad_b_ptr->d_ptr;
 }
 
-size_t ContentData::size()
+int ContentData::size()
 {
+    check_values();
+    return values_b_ptr->size / sizeof(float);
+}
+
+size_t ContentData::bytes()
+{
+    // Returns size of grad / values in bytes.
     check_values();
     return values_b_ptr->size;
 }
@@ -263,6 +299,7 @@ void ContentData::check_values(void)
 {
     if (!values_b_ptr) throw logic_error("Values were never allocated.");
     if (!(values_b_ptr->d_ptr)) throw logic_error("Values is empty.");
+    if (!(values_b_ptr->size)) throw logic_error("Size is not specified.");
 }
 
 void ContentData::check_grad(void)
@@ -272,12 +309,6 @@ void ContentData::check_grad(void)
 }
 // </ContentData>
 
-
-int main(void)
-{
-    cout<<"idi nahuy"<<endl;
-    return 0;
-}
 
 
 

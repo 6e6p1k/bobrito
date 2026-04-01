@@ -17,7 +17,11 @@ Grid* MemoryPool::make_connect_grid(int tier) { return nullptr; }
 // ContentData stubs
 float* ContentData::values() { return nullptr; }
 float* ContentData::grad() { return nullptr; }
-size_t ContentData::size() { return 0; }
+int ContentData::size() { return 0; }
+size_t ContentData::bytes() { return 0; }
+void allocate_values(int size) {}
+void allocate_grad(int size) {}
+void allocate(int size) {}
 float* ContentData::d_values_to_h() { return nullptr; }
 float* ContentData::d_grad_to_h() { return nullptr; }
 void ContentData::h_values_to_d(float*, int) {}

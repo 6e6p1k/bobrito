@@ -1,8 +1,14 @@
 #include "node.h"
 #include "graph_viz.h"
 #include "backward.h"
+#include "allocator.cuh"
+#include "ops.cuh"
+#include "utils.h"
+
+#include <cstddef>
+#include <ostream>
+#include <vector>
 #include <algorithm>
-#include <machine/limits.h>
 #include <memory>
 
 
@@ -11,44 +17,72 @@ std::shared_ptr<SourceNode> make_source_node(int ndim, int* shape, bool requires
     node->kind = NodeKind::Source;
     node->h_meta = make_shape_data(ndim, shape);
     node->h_requiers_grad = requires_grad;
-    node->use_count++;
+    node->param_count++;
     return node;
 }
 
-void post_order_dfs(Node* node, unordered_set<Node*>& visited, vector<Node*>& order) {
+namespace qq
+{
+std::shared_ptr<SourceNode> fill(int ndim, int* shape, float val, bool requires_grad)
+{
+    auto node = std::make_shared<SourceNode>();
+    node->kind = NodeKind::Source;
+    node->h_meta = make_shape_data(ndim, shape);
+    node->h_requiers_grad = requires_grad;
+    node->param_count++;
+    node->d_content = make_shared<ContentData>();
+    int size = utils::numel(ndim, shape);
+    node->d_content->allocate_values(size);
+    cu_ops::fill(node.get(), val);
+    return node;
+}
+}
+
+void _find_roots(Node* node, unordered_set<Node*>& visited, vector<Node*>& roots) {
     if (visited.count(node)) return;
     visited.insert(node);
-
-    if (node->kind == NodeKind::Internal) {
-        InternalNode* inode = static_cast<InternalNode*>(node);
-        for (int i = 0; i < inode->num_inputs; i++)
-            post_order_dfs(inode->inputs[i].get(), visited, order);
+    
+    if (node->kind == NodeKind::Source) {
+        roots.push_back(node);
+        return;
     }
+    
+    InternalNode* inode = static_cast<InternalNode*>(node);
+    for (int i = 0; i < inode->num_inputs; i++)
+        _find_roots(inode->inputs[i].get(), visited, roots);
+}
 
-    order.push_back(node);
+
+vector<Node*> get_roots(std::shared_ptr<InternalNode> node)
+{
+    unordered_set<Node*> visited;
+    vector<Node*> order;
+    _find_roots(node.get(), visited, order);
+    return order;
 }
 
 int main(void) {
-    // f = (n1.sum(-1) * n2 + n3) * (512, 128, 512)
+    // f = (n1 * n2 + n3) * n4
 
     // (128, 28*28)
     int s1[] = {128, 512};
-    auto n1 = make_source_node(2, s1, true);
+    // auto n1 = make_source_node(2, s1, true);
+    auto n1 = qq::fill(2, s1, 3.0, true);
     n1->label = "N1";
 
     // (1, 512)
     int s2[] = {1, 512};
-    auto n2 = make_source_node(2, s2, true);
+    auto n2 = qq::fill(2, s2, 1.0, true);
     n2->label = "N2";
 
     // (1, 512)
     int s3[] = {1, 512};
-    auto n3 = make_source_node(2, s3, true);
+    auto n3 = qq::fill(2, s3, 3.0, true);
     n3->label = "N3";
 
     //
     int s4[] = {512, 128, 512};
-    auto n4 = make_source_node(3, s4, true);
+    auto n4 = qq::fill(3, s4, 3.0, true);
     n4->label = "N4";
 
     // auto i1 = sum(n1, -1, true);
@@ -56,24 +90,43 @@ int main(void) {
     auto i3 = add(n3, i2);
     auto i4 = mul(n4, i3);
 
-    // auto bwd_node = std::make_shared<InternalNode>();
-    // auto node = static_cast<InternalNode*>(i4.get());
-    // auto bwd_node = make_internal_node_like(node);
-    // bwd_node->op = OpType::Empty;
-    // bwd_node->label = "bwd_node";
+    if (i4->d_content == nullptr) cout<<"i4->d_content = nullptr!"<<endl;
     std::shared_ptr<InternalNode> q = std::dynamic_pointer_cast<InternalNode>(i4);
-    build_backward(i4, q, 4);
-    export_dot_full(i4.get(), "turbofile");
-    std::shared_ptr<InternalNode> i4_out_1 = std::dynamic_pointer_cast<InternalNode>(q->outputs[0]);
-    cout<<i4_out_1->label<<endl;
-    cout<<i4_out_1->inputs[0]->label<<endl;
-    // export_dot_backward(bwd_node, "turbofile");
-    // unordered_set<Node*> visited;
-    // vector<Node*> order;
-    // post_order_dfs(i4.get(), visited, order);
-    // visualize(i4); // visualize forward
-    // export_dot(i4, "graph.dot"); // export to .dot
-    // backward_viz(bwd_node); // visualize backward
+
+    if (q->d_content == nullptr) cout<<"q->d_content = nullptr!"<<endl;
+    _backward(i4);
+    // eval(q);
+    // geval(q);
+    export_dot_full(i4.get(), "turbofile");    
+
+
+    // auto next = i4->outputs[1];
+    // if (next->kind == NodeKind::Internal) 
+    // {
+    //     auto _next = dynamic_pointer_cast<InternalNode>(next);
+    //     cout<<"_next->label="<<_next->label<<endl;
+    //     for (int i = 0; i < _next->num_inputs; ++i) 
+    //     {
+    //         if (_next->inputs[i] == nullptr) cout<<"_next->inputs["<<i<<"] = nulltpr"<<endl;
+    //         else cout<<"label: "<<_next->inputs[i]->label<<endl;
+    //     }
+    // } else { cout<<"next->kind=Source"<<endl;}
+
+    // auto topo_lst = topo_sort(q);
+    // auto dfs_lst = get_roots(q);
+
+    // cout<<"DFS size: "<<dfs_lst.size()<<endl;
+    // cout<<"TOPO size: "<<topo_lst.size()<<endl;
+    // for (int i = 0; i < min(topo_lst.size(), dfs_lst.size()); ++i)
+    // {
+    //     cout<<"DFS ["<<i<<"]: "<<dfs_lst[i]->label<<endl;
+    //     cout<<"TOPO ["<<i<<"]: "<<topo_lst[i]->label<<endl;
+    // }
+
+
+
+
+    // print_internal_node(q.get());
     return 0;
 }
 
@@ -83,3 +136,12 @@ int main(void) {
 
 // just export to pdf:
 // g++ -std=c++17 -o visual visualize_graph.cpp utils.cpp grad.cpp graph_viz.cpp allocator_stub.cpp 2>&1 && dot -Tpdf graph.dot -o graph.pdf
+ 
+// useful things:
+    // export_dot_backward(bwd_node, "turbofile");
+    // unordered_set<Node*> visited;
+    // vector<Node*> order;
+    // post_order_dfs(i4.get(), visited, order);
+    // visualize(i4); // visualize forward
+    // export_dot(i4, "graph.dot"); // export to .dot
+    // backward_viz(bwd_node); // visualize backward

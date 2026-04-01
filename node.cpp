@@ -1,8 +1,14 @@
+#include <atomic>
+#include <cstddef>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
+#include <unordered_set>
+#include <vector>
 
 #include "utils.h"
 #include "allocator.cuh"
+#include "ops.cuh"
 #include "node.h"
 
 // <helper for OpType>
@@ -92,18 +98,19 @@ SourceNode::SourceNode(float* data, int ndim, int* shape, int* strides, bool req
 
 //      Makes internal node,
 //      mostly utilised by node operations
-std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides, int use_count)
+std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides, int param_count)
 {
     std::shared_ptr<InternalNode> node = std::make_shared<InternalNode>();
     node->kind = NodeKind::Internal;
     node->op = op;
     node->num_inputs = num_inputs;
     node->h_meta = make_shape_data(ndim, shape, strides);
+    node->d_content = make_shared<ContentData>();
     for (int i = 0; i < num_inputs; i++)
     {
         node->inputs[i] = inputs[i];
-        node->use_count += inputs[i]->use_count;
-        // cout<<"Node ["<<inputs[i]->label<<"] has "<<inputs[i]->use_count<<" labels"<<endl;
+        node->param_count += inputs[i]->param_count;
+        // cout<<"Node ["<<inputs[i]->label<<"] has "<<inputs[i]->param_count<<" labels"<<endl;
         if (inputs[i]->outputs[0] == nullptr) inputs[i]->outputs[0] = node;
         else inputs[i]->outputs[1] = node;
     }
@@ -119,22 +126,23 @@ std::shared_ptr<InternalNode> make_internal_node_like(InternalNode* example)
     node->num_inputs = example->num_inputs;
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
-    node->use_count = example->use_count;
+    node->param_count = example->param_count;
     return node;
 }
 
-std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int use_count)
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int param_count)
 {
     if (example->kind == NodeKind::Internal)
     {
         SourceNode* snode = static_cast<SourceNode*>(&*example);
-        if (snode->h_requiers_grad) use_count -= 1;
+        if (snode->h_requiers_grad) param_count -= 1;
     }
     auto node = std::make_shared<InternalNode>();
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
-    node->use_count = use_count;
+    node->param_count = param_count;
+    node->label = example->label;
     return node;
 }
 
@@ -144,6 +152,17 @@ std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> exampl
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
+    node->label = example->label;
+    return node;
+}
+
+std::shared_ptr<InternalNode> gcopy_to_internal_node(std::shared_ptr<Node> example)
+{
+    auto node = std::make_shared<InternalNode>();
+    node->kind = NodeKind::Internal;
+    node->h_meta = example->h_meta;
+    node->d_content = example->d_content;
+    node->label = example->label;
     return node;
 }
 
@@ -154,8 +173,36 @@ std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example)
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
     node->h_requiers_grad = example->h_requiers_grad;
-    node->use_count = example->use_count;
+    node->param_count = example->param_count;
     return node;
+}
+
+void print_internal_node(InternalNode* node)
+{
+    int* shape = node->h_meta->shape();
+    float* h_data = node->d_content->d_values_to_h();
+    int ndim = node->h_meta->ndim;
+    
+    // output shape
+    cout<<"Shape: [";
+    for (int i = 0; i < ndim; ++i) { if (i > 0) cout<<", "; cout<<shape[i]; }
+    cout<<"]"<<endl;
+
+    // output elements (truncated)
+    int total = node->d_content->size();
+    int limit = total > 20 ? 20 : total;
+
+    cout<<"Op: "<<opToString(node->op)<<endl;
+    cout<<"Data: [";
+    for (int i = 0; i < limit; ++i)
+    {
+        if (i > 0) cout<<", ";
+        cout<<h_data[i];
+    }
+    if (total > limit) cout<<", ... ("<<total<<" total)";
+    cout<<"]"<<endl;
+
+    delete[] h_data;
 }
 // </Node>
 
@@ -217,3 +264,136 @@ std::shared_ptr<Node> skip(std::shared_ptr<Node> a)
 }
 //      </ops>
 // </nodes interaction>
+
+
+// <Topological sort>
+void _build_topo(Node* node, unordered_set<Node*>& visited, vector<InternalNode*>& inodes, vector<SourceNode*>& snodes)
+{
+    if (visited.count(node)) return;
+    visited.insert(node);
+
+    if (node->kind == NodeKind::Internal) 
+    {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+        for (int i = 0; i < inode->num_inputs; i++)
+            _build_topo(inode->inputs[i].get(), visited, inodes, snodes);
+        inodes.push_back(inode);
+    }
+    else {
+        snodes.push_back(static_cast<SourceNode*>(node));
+    }
+}
+
+void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order)
+{
+    if (visited.count(node)) return;
+    visited.insert(node);
+
+    if (node->kind == NodeKind::Internal) {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+        for (int i = 0; i < inode->num_inputs; i++)
+            build_topo(inode->inputs[i].get(), visited, order);
+    }
+    order.push_back(node);
+
+}
+
+void build_topo_grad(Node* node, unordered_set<Node*>& visited, vector<Node*>& order)
+{
+    if (visited.count(node)) return;
+    visited.insert(node);
+
+    if (node->kind == NodeKind::Internal) {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+        // compute num_outputs
+        int num_outputs = 0;
+        while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
+        // same but with outputs
+        for (int i = 0; i < num_outputs; i++)
+            build_topo(inode->outputs[i].get(), visited, order);
+    }
+    order.push_back(node);
+}
+
+vector<Node*> topo_sort(shared_ptr<InternalNode> node, bool grad)
+{
+    unordered_set<Node*> visited;
+    vector<Node*> order;
+    if (grad) build_topo_grad(node.get(), visited, order);
+    else build_topo(node.get(), visited, order);
+    return order;
+}
+// </Topological sort>
+
+void eval(std::shared_ptr<InternalNode> root)
+{
+    cout<<endl;
+    cout<<"FROM 'node.cpp' FUNCTION: void evaluate"<<endl;
+    // perform topological sort
+    vector<Node*> order = topo_sort(root, false);
+    cout<<"order.size() = "<<order.size()<<endl;
+
+    
+    // walk in order
+    for (Node* node : order)
+    {   
+        cout<<"Current node: "<<node->label<<endl;
+        if (node->kind == NodeKind::Source) continue;
+
+        InternalNode* inode = static_cast<InternalNode*>(node);
+
+        // allocate memory
+        int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
+        inode->d_content->allocate_values(size);
+        if (inode->d_content->values()) cout<<"values are allocated"<<endl;
+        
+        // dispatch
+        switch (inode->op)
+        {
+            case OpType::Add:
+                cu_ops::add(inode);
+                break;
+            case OpType::Mul:
+                cu_ops::mul(inode);
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void geval(std::shared_ptr<InternalNode> root)
+{
+    cout<<endl;
+    cout<<"FROM 'node.cpp' FUNCTION: void geval"<<endl;
+    // perform topological sort
+    vector<Node*> order = topo_sort(root, false);
+    cout<<"order.size() = "<<order.size()<<endl;
+
+    
+    // walk in order
+    for (Node* node : order)
+    {   
+        cout<<"Current node: "<<node->label<<endl;
+        if (node->kind == NodeKind::Source) continue;
+
+        InternalNode* inode = static_cast<InternalNode*>(node);
+
+        // allocate memory
+        int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
+        inode->d_content->allocate_grad(size);
+        if (inode->d_content->values()) cout<<"grad was allocated"<<endl;
+        
+        // dispatch
+        switch (inode->op)
+        {
+            case OpType::Mul:
+                cu_ops::gmul(inode);
+                break;
+            case OpType::Skip:
+                cu_ops::skip(inode);
+            default:
+                break;
+        }
+    }
+}

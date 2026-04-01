@@ -1,4 +1,7 @@
 #pragma once
+#include <memory>
+#include <unordered_set>
+#include <vector>
 
 #include "allocator.cuh"
 
@@ -32,7 +35,7 @@ struct Node
     NodeKind kind;
     ShapePtr h_meta;       // shape, strides, ndim on host (shareable between fwd/bwd nodes)
     ContentPtr d_content;    // values + grad on device (shareable between fwd/bwd nodes)
-    int use_count = 0;
+    int param_count = 0;
     string label; // just to test, remove later
     std::shared_ptr<Node> outputs[4]; // for grad
 
@@ -53,11 +56,12 @@ struct InternalNode : Node
     int num_inputs;
 };
 
-std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides = nullptr, int use_count = 0);
+std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides = nullptr, int param_count = 0);
 std::shared_ptr<InternalNode> make_internal_node_like(InternalNode* example);
 std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example);
-std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int use_count);
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int param_count);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
+void print_internal_node(InternalNode* node);
 
 
 // <nodes interaction>
@@ -75,5 +79,12 @@ std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims = fals
 
 // </nodes interaction>
 
+// <Topological sort>
+void _build_topo(Node* node, unordered_set<Node*>& visited, vector<InternalNode*>& inodes, vector<SourceNode*>& snodes);
+void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order);
+vector<Node*> topo_sort(shared_ptr<InternalNode> node, bool grad);
 
+// </Topological sort>
 
+void eval(std::shared_ptr<InternalNode> root);
+void geval(std::shared_ptr<InternalNode> root);

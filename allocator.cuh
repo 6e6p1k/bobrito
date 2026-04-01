@@ -87,7 +87,11 @@ struct ContentData
 
     float* values();
     float* grad();
-    size_t size();
+    int size();
+    size_t bytes();
+    void allocate_values(int size);
+    void allocate_grad(int size);
+    void allocate(int size);
     float* d_values_to_h();
     float* d_grad_to_h();
     void h_values_to_d(float* h_data, int size);
