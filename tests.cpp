@@ -342,7 +342,7 @@ TEST(make_internal_node_basic) {
 TEST(backward_pass) {
     // f = (n1.sum(-1) * n2 + n3) * (512, 128, 512)
     // (128, 28*28)
-    int s1[] = {128, 784};
+    int s1[] = {128, 512};
     auto n1 = make_source_node(2, s1, true, "source_A");
 
     // (1, 512)
@@ -357,12 +357,13 @@ TEST(backward_pass) {
     int s4[] = {512, 128, 512};
     auto n4 = make_source_node(3, s4, false, "source_D");
 
-    auto i1 = sum(n1, -1, true);
-    auto i2 = mul(n2, i1);
+    auto i2 = mul(n2, n1);
     auto i3 = add(n3, i2);
     auto i4 = mul(n4, i3);
 
     backward_pass(i4);
+    auto bwd_node = make_source_node(3, s4, false, "bwd_node");
+    build_backward(i4, bwd_node, 4);
 }
 
 // ============ Graph visualization demo ============
@@ -414,8 +415,8 @@ void viz_demo() {
 int main() {
     cout << "\nResults: " << tests_passed << " passed, " << tests_failed << " failed" << endl;
 
-    if (tests_failed == 0) {
-        viz_demo();
-    }
+    // if (tests_failed == 0) {
+    //     viz_demo();
+    // }
     return tests_failed > 0 ? 1 : 0;
 }

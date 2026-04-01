@@ -1,4 +1,5 @@
 #include "graph_viz.h"
+#include "grad.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -36,7 +37,9 @@ static const char* op_symbol(OpType op) {
         case OpType::Sum:    return "Σ";
         case OpType::Max:    return "↑";
         case OpType::Min:    return "↓";
-        case OpType::ReLU:   return "⌐";
+        case OpType::ReLU:   return " ";
+        case OpType::Skip:   return "->";
+        case OpType::Empty:  return " ";
     }
     return "?";
 }
@@ -50,6 +53,8 @@ static const char* op_name(OpType op) {
         case OpType::Max:    return "Max";
         case OpType::Min:    return "Min";
         case OpType::ReLU:   return "ReLU";
+        case OpType::Skip:   return "Skip";
+        case OpType::Empty:  return " ";
     }
     return "??";
 }
@@ -63,6 +68,8 @@ static const char* op_color(OpType op) {
         case OpType::Max:    return clr::bred;
         case OpType::Min:    return clr::bgreen;
         case OpType::ReLU:   return clr::byellow;
+        case OpType::Skip:   return clr::bblue;
+        case OpType::Empty:  return clr::gray;
     }
     return clr::reset;
 }
@@ -404,4 +411,176 @@ void backward_viz(const std::shared_ptr<Node>& root) {
             cout << "       " << clr::dim << "│" << clr::reset << endl;
     }
     cout << endl;
+}
+
+
+// might be wrong 
+static void draw_backward_node(Node* node, const string& prefix, bool is_last, bool is_root) {
+    // build label
+    string title;
+    const char* border_color;
+
+    if (node->kind == NodeKind::Internal) {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+        border_color = op_color(inode->op);
+        title = string(border_color) + clr::bold + " ∇" + op_name(inode->op) + " " + clr::reset;
+    } else {
+        border_color = clr::green;
+        title = string(clr::bgreen) + " ∇Source " + clr::reset;
+    }
+
+    string shape_s = shape_str(node->h_meta);
+    string strides_s = strides_str(node->h_meta);
+
+    vector<pair<string,string>> rows;
+    rows.push_back({string(clr::dim) + "Shape:" + clr::reset,
+                    string(clr::yellow) + shape_s + clr::reset});
+    rows.push_back({string(clr::dim) + "use_count:" + clr::reset,
+                    string(clr::cyan) + to_string(node->use_count) + clr::reset});
+
+    // compute width
+    int title_vis = visible_len(title);
+    int max_w = title_vis;
+    for (auto& [l, v] : rows) {
+        int row_vis = visible_len(l) + 2 + visible_len(v);
+        if (row_vis > max_w) max_w = row_vis;
+    }
+    max_w += 2;
+
+    // build box lines
+    vector<string> lines;
+
+    // top
+    {
+        string top = string(border_color) + "╭─" + clr::reset + title + string(border_color);
+        int remaining = max_w - title_vis - 1;
+        for (int i = 0; i < remaining; i++) top += "─";
+        top += "╮" + string(clr::reset);
+        lines.push_back(top);
+    }
+    // rows
+    for (auto& [l, v] : rows) {
+        string row = string(border_color) + "│" + clr::reset + " ";
+        row += l;
+        int gap = 12 - visible_len(l);
+        for (int i = 0; i < gap; i++) row += " ";
+        row += v;
+        int used = 1 + visible_len(l) + gap + visible_len(v);
+        int pad = max_w + 1 - used;
+        for (int i = 0; i < pad; i++) row += " ";
+        row += string(border_color) + "│" + clr::reset;
+        lines.push_back(row);
+    }
+    // bottom
+    {
+        string bot = string(border_color) + "╰";
+        for (int i = 0; i < max_w + 1; i++) bot += "─";
+        bot += "╯" + string(clr::reset);
+        lines.push_back(bot);
+    }
+
+    // print
+    string connector_prefix = is_root ? prefix : prefix + (is_last ? "  " : "│ ");
+    for (int i = 0; i < (int)lines.size(); i++) {
+        if (is_root)       cout << prefix << lines[i] << endl;
+        else if (i == 0)   cout << prefix << (is_last ? "└─ " : "├─ ") << lines[i] << endl;
+        else               cout << connector_prefix << "   " << lines[i] << endl;
+    }
+
+    // recurse into outputs
+    if (node->kind == NodeKind::Internal) {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+        string child_prefix = (is_root ? prefix : connector_prefix) + "   ";
+
+        int num_outputs = 0;
+        while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
+
+        for (int i = 0; i < num_outputs; i++) {
+            bool last_child = (i == num_outputs - 1);
+            cout << child_prefix << (last_child ? "  " : "│ ") << endl;
+            draw_backward_node(inode->outputs[i].get(), child_prefix, last_child, false);
+        }
+    }
+}
+
+void visualize_backward(const std::shared_ptr<Node>& root) {
+    cout << endl;
+    cout << clr::dim << "  ╶──── Backward Graph ────╴" << clr::reset << endl;
+    cout << endl;
+    draw_backward_node(root.get(), "  ", true, true);
+    cout << endl;
+}
+
+static void dot_emit_backward_node(ofstream& out, Node* node, unordered_set<Node*>& visited) {
+    if (visited.count(node)) return;
+    visited.insert(node);
+
+    string id = "n" + to_string((uintptr_t)node);
+    string shape_s = shape_str(node->h_meta);
+
+    if (node->kind == NodeKind::Internal) {
+        InternalNode* inode = static_cast<InternalNode*>(node);
+        string sym = op_symbol(inode->op);
+        string name = op_name(inode->op);
+        const char* color = dot_op_color(inode->op);
+
+        out << "    " << id << " [\n"
+            << "        label=<"
+            << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"4\">"
+            << "<TR><TD COLSPAN=\"2\"><FONT POINT-SIZE=\"18\">∇</FONT> <B>" << name << "</B></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">use_count: " << node->use_count << "</FONT></TD></TR>"
+            << "</TABLE>>\n"
+            << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
+            << "        penwidth=2 color=\"" << color << "30\"\n"
+            << "    ];\n";
+
+        int num_outputs = 0;
+        while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
+
+        for (int i = 0; i < num_outputs; i++) {
+            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
+            out << "    " << id << " -> " << child_id
+                << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+            dot_emit_backward_node(out, inode->outputs[i].get(), visited);
+        }
+    } else {
+        SourceNode* snode = static_cast<SourceNode*>(node);
+        const char* color = snode->h_requiers_grad ? "#C8E6C9" : "#E0E0E0";
+        const char* border = snode->h_requiers_grad ? "#66BB6A" : "#BDBDBD";
+
+        out << "    " << id << " [\n"
+            << "        label=<"
+            << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\">"
+            << "<TR><TD><B>∇Source</B></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">use_count: " << snode->use_count << "</FONT></TD></TR>";
+        if (snode->h_requiers_grad)
+            out << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"9\" COLOR=\"#388E3C\">requires_grad</FONT></TD></TR>";
+        out << "</TABLE>>\n"
+            << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
+            << "        penwidth=2 color=\"" << border << "\"\n"
+            << "    ];\n";
+    }
+}
+
+void export_dot_backward(const std::shared_ptr<Node>& root, const char* filename) {
+    ofstream out(filename);
+    out << "digraph BackwardGraph {\n"
+        << "    rankdir=TB;\n"
+        << "    bgcolor=\"#FAFAFA\";\n"
+        << "    pad=0.5;\n"
+        << "    nodesep=0.6;\n"
+        << "    ranksep=0.8;\n"
+        << "    node [fontname=\"Helvetica\" fontsize=12 margin=\"0.2,0.1\"];\n"
+        << "    edge [fontname=\"Helvetica\" fontsize=9];\n\n";
+
+    unordered_set<Node*> visited;
+    dot_emit_backward_node(out, root.get(), visited);
+
+    out << "}\n";
+    out.close();
+
+    cout << "Backward graph written to " << filename << endl;
+    cout << "Render with:  dot -Tpng " << filename << " -o backward.png" << endl;
 }

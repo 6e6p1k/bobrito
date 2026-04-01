@@ -1,6 +1,8 @@
 #include "grad.h"
 #include "graph_viz.h"
+#include <algorithm>
 #include <memory>
+
 
 std::shared_ptr<SourceNode> make_source_node(int ndim, int* shape, bool requires_grad) {
     auto node = std::make_shared<SourceNode>();
@@ -15,7 +17,7 @@ int main(void) {
     // f = (n1.sum(-1) * n2 + n3) * (512, 128, 512)
 
     // (128, 28*28)
-    int s1[] = {128, 784};
+    int s1[] = {128, 512};
     auto n1 = make_source_node(2, s1, true);
     n1->label = "N1";
 
@@ -31,17 +33,25 @@ int main(void) {
 
     //
     int s4[] = {512, 128, 512};
-    auto n4 = make_source_node(3, s4, false);
+    auto n4 = make_source_node(3, s4, true);
     n4->label = "N4";
 
-    auto i1 = sum(n1, -1, true);
-    auto i2 = mul(n2, i1);
+    // auto i1 = sum(n1, -1, true);
+    auto i2 = mul(n2, n1);
     auto i3 = add(n3, i2);
     auto i4 = mul(n4, i3);
 
+    // auto bwd_node = std::make_shared<InternalNode>();
+    auto node = static_cast<InternalNode*>(i4.get());
+    auto bwd_node = make_internal_node_like(node);
+    bwd_node->op = OpType::Empty;
+    bwd_node->label = "bwd_node";
+    build_backward(i4, bwd_node, 4);
+    export_dot_backward(bwd_node, "turbofile");
+
     // visualize(i4); // visualize forward
-    export_dot(i4, "graph.dot"); // export to .dot
-    // backward_viz(i4); // visualize backward
+    // export_dot(i4, "graph.dot"); // export to .dot
+    // backward_viz(bwd_node); // visualize backward
     return 0;
 }
 

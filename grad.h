@@ -6,7 +6,7 @@
 #include <unordered_set>
 
 
-enum class OpType { Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip};
+enum class OpType { Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip, Empty};
 // <helper for OpType>
 ostream& operator<<(std::ostream& os, const OpType& op);
 string opToString(const OpType& op);
@@ -64,6 +64,8 @@ struct InternalNode : Node
 std::shared_ptr<Node> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides = nullptr, int use_count = 0);
 std::shared_ptr<InternalNode> make_internal_node_like(InternalNode* example);
 std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example);
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int use_count);
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
 
 
 // <nodes interaction>
@@ -87,6 +89,7 @@ namespace backward_node_ops
 void add(std::shared_ptr<InternalNode> self, std::shared_ptr<InternalNode> mirror);
 }
 
+void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node, int use_count);
 
 // <Topological sort>
 void build_topo(Node* node, unordered_set<Node*>& visited, vector<InternalNode*>& inodes, vector<SourceNode*>& snodes);
