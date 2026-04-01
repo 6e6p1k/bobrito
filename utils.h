@@ -1,7 +1,7 @@
 #pragma once
 #include <iostream>
 #include <exception>
-#include "grad.h"
+#include "node.h"
 
 using namespace std;
 namespace utils 
@@ -22,11 +22,18 @@ struct BroadcastInfo {
     int ndim;
 };
 
+struct MatmulDims {
+    int M, K, N, batch;
+    int* res_shape;
+};
+
 
 namespace check_shape_return_out_shape 
 {
 pair<int*, int> elemwise(const int* a_shape, const int* b_shape, int a_size, int b_size);
-pair<int*, int> elemwise(Node* A, Node* B);
-pair<int*, int> reduction(const int* a_shape, const int a_size, const int ndim, const int dim, const bool keepdims);
-pair<int*, int> reduction(Node* A, const int dim, const bool keepdims);
+pair<int*, int> elemwise(shared_ptr<Node> A, shared_ptr<Node> B);
+pair<int*, int> reduction(const int* a_shape, const int ndim, const int dim, const bool keepdims);
+pair<int*, int> reduction(shared_ptr<Node> A, const int dim, const bool keepdims);
+pair<int*, int> matmul(int* a_shape, int* b_shape, int a_ndim, int b_ndim);
+pair<int*, int> matmul(shared_ptr<Node> A, shared_ptr<Node> B);
 }

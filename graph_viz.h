@@ -1,5 +1,5 @@
 #pragma once
-#include "grad.h"
+#include "node.h"
 #include <memory>
 
 void visualize(const std::shared_ptr<Node>& root);

@@ -1,5 +1,5 @@
 #include "graph_viz.h"
-#include "grad.h"
+#include "node.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
