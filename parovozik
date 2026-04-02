@@ -1,0 +1,132 @@
+digraph FullGraph {
+    rankdir=BT;
+    bgcolor="#FAFAFA";
+    pad=1.0;
+    nodesep=1.0;
+    ranksep=1.5;
+    node [fontname="Helvetica" fontsize=12 margin="0.2,0.1"];
+    edge [fontname="Helvetica" fontsize=9];
+
+    n97879646945776 [penwidth=4 color="#FF5722"];
+
+    n97879646825968 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2"><TR><TD><B>Source</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#388E3C">requires_grad</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#C8E6C9"
+        penwidth=2 color="#66BB6A"
+    ];
+    n97879646825968 -> n97879646945776 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646945776 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 4</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#CE93D8"
+        penwidth=2 color="#CE93D830"
+    ];
+    n97879646825968 -> n97879646945776 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646945360 -> n97879646945776 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646945360 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">+</FONT> <B>Add</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 3</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#4FC3F7"
+        penwidth=2 color="#4FC3F730"
+    ];
+    n97879646825680 -> n97879646945360 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646825680 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2"><TR><TD><B>Source</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#388E3C">requires_grad</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#C8E6C9"
+        penwidth=2 color="#66BB6A"
+    ];
+    n97879646825680 -> n97879646945360 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646826240 -> n97879646945360 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646826240 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 2</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#CE93D8"
+        penwidth=2 color="#CE93D830"
+    ];
+    n97879629395392 -> n97879646826240 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879629395392 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2"><TR><TD><B>Source</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#388E3C">requires_grad</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#C8E6C9"
+        penwidth=2 color="#66BB6A"
+    ];
+    n97879629395392 -> n97879646826240 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879629098208 -> n97879646826240 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879629098208 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2"><TR><TD><B>Source</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9" COLOR="#388E3C">requires_grad</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#C8E6C9"
+        penwidth=2 color="#66BB6A"
+    ];
+    n97879629098208 -> n97879646826240 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646826240 -> n97879646945360 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646945360 -> n97879646945776 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646945776 -> n97879646946176 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646946176 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18"> </FONT> <B>Empty</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 4</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#EEEEEE"
+        penwidth=2 color="#EEEEEE30"
+    ];
+    n97879646945776 -> n97879646946176 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646946176 -> n97879646946480 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646946480 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 3</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#CE93D8"
+        penwidth=2 color="#CE93D830"
+    ];
+    n97879646946176 -> n97879646946480 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646946736 -> n97879646946480 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646946736 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">+</FONT> <B>Add</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 3</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#4FC3F7"
+        penwidth=2 color="#4FC3F730"
+    ];
+    n97879646946176 -> n97879646946992 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646946992 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 3</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#CE93D8"
+        penwidth=2 color="#CE93D830"
+    ];
+    n97879646946176 -> n97879646946992 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646947248 -> n97879646946992 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646947248 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">+</FONT> <B>Add</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [512, 128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#4FC3F7"
+        penwidth=2 color="#4FC3F730"
+    ];
+    n97879646946992 -> n97879646947504 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646947504 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">→</FONT> <B>Skip</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 2</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#EEEEEE"
+        penwidth=2 color="#EEEEEE30"
+    ];
+    n97879646946992 -> n97879646947504 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646946992 -> n97879646947760 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646947760 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">→</FONT> <B>Skip</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 2</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#EEEEEE"
+        penwidth=2 color="#EEEEEE30"
+    ];
+    n97879646946992 -> n97879646947760 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646947760 -> n97879646948016 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646948016 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#CE93D8"
+        penwidth=2 color="#CE93D830"
+    ];
+    n97879646947760 -> n97879646948016 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646948272 -> n97879646948016 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646948272 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">+</FONT> <B>Add</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#4FC3F7"
+        penwidth=2 color="#4FC3F730"
+    ];
+    n97879646947760 -> n97879646948528 [color="#ff0000" penwidth=1.5 arrowsize=0.8];
+    n97879646948528 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">✕</FONT> <B>Mul</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [128, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#CE93D8"
+        penwidth=2 color="#CE93D830"
+    ];
+    n97879646947760 -> n97879646948528 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646948784 -> n97879646948528 [color="#666666" penwidth=1.5 arrowsize=0.8];
+    n97879646948784 [
+        label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4"><TR><TD COLSPAN="2"><FONT POINT-SIZE="18">+</FONT> <B>Add</B></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#555555">Shape: [1, 512]</FONT></TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#2196F3">param_count: 1</FONT></TD></TR></TABLE>>
+        shape=box style="rounded,filled" fillcolor="#4FC3F7"
+        penwidth=2 color="#4FC3F730"
+    ];
+}

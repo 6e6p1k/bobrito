@@ -54,8 +54,27 @@ BroadcastInfo elemwise(InternalNode* node)
     return elemwise(a_shape, b_shape, a_strides, b_strides, out_shape, out_ndim);
 }
 
+MatmulDims matmul(int* a_shape, int* b_shape, int* res_shape, int ndim) {
+    int M = a_shape[ndim - 2];
+    int K = a_shape[ndim - 1];
+    int N = b_shape[ndim - 1];
+    int batch = 1;
+    for (int i = 0; i < ndim - 2; i++) batch *= a_shape[i];
 
+    return {M, K, N, batch, res_shape};
+}
 
+MatmulDims matmul(InternalNode* node) {
+    // a_info
+    int* a_shape = node->inputs[0]->h_meta->shape();
+    // b_info
+    int* b_shape = node->inputs[1]->h_meta->shape();
+    // out_info
+    int* out_shape = node->h_meta->shape();
+    int out_ndim = node->h_meta->ndim;
+
+    return matmul(a_shape, b_shape, out_shape, out_ndim);
+}
 }
 
 namespace check_shape_return_out_shape 
@@ -138,21 +157,7 @@ pair<int*, int> matmul(shared_ptr<Node> A, shared_ptr<Node> B) {
 }
 
 // future
-// MatmulDims matmul(int* a_shape, int* b_shape, int a_ndim) {
-//     int ndim = a_ndim;
-//     int M = a_shape[ndim - 2];
-//     int K = a_shape[ndim - 1];
-//     int N = b_shape[ndim - 1];
-//     int batch = 1;
-//     for (int i = 0; i < ndim - 2; i++) batch *= a_shape[i];
 
-//     int* res_shape = new int[a_ndim];
-//     for (int i = 0; i < ndim - 2; ++i) res_shape[i] = a_shape[i];
-//     res_shape[ndim - 1] = M;
-//     res_shape[ndim - 2] = N;
-
-//     return {M, K, N, batch, res_shape};
-// }
 
 // MatmulDims matmul(shared_ptr<Node> A, shared_ptr<Node> B) {
 //     int* a_shape = A->h_meta->shape();

@@ -82,6 +82,10 @@ ShapePtr make_shape_data(int ndim, int* shape, int* strides)
 
 // <Node>
 //      SourceNode Initializer
+
+float* Node::get_values() { return flipped ? d_content->grad() : d_content->values(); }
+float* Node::get_grad() { return flipped ? d_content->values() : d_content->grad(); }
+
 SourceNode::SourceNode(float* data, int ndim, int* shape, int* strides, bool requires_grad)
 {
     kind = NodeKind::Source;
@@ -153,16 +157,19 @@ std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> exampl
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
     node->label = example->label;
+    node->param_count = example->param_count;
     return node;
 }
 
-std::shared_ptr<InternalNode> gcopy_to_internal_node(std::shared_ptr<Node> example)
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped)
 {
     auto node = std::make_shared<InternalNode>();
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
     node->label = example->label;
+    if (flipped) node->flipped = !node->flipped;
+    node->param_count = example->param_count;
     return node;
 }
 
@@ -177,10 +184,31 @@ std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example)
     return node;
 }
 
-void print_internal_node(InternalNode* node)
+void prepare_starting_grad(std::shared_ptr<Node> node)
+{
+    int seed_size = utils::numel(node->h_meta->ndim, node->h_meta->shape());
+    node->d_content->allocate(seed_size);
+    bool _buff = node->flipped;
+    node->flipped = true;
+    cu_ops::fill(node.get(), 1.0f);
+    node->flipped = false;
+    node->flipped = _buff;
+}
+
+void prepare_starting_grad(std::shared_ptr<InternalNode> node)
+{
+    int seed_size = utils::numel(node->h_meta->ndim, node->h_meta->shape());
+    node->d_content->allocate(seed_size);
+    bool _buff = node->flipped;
+    node->flipped = true;
+    cu_ops::fill(node.get(), 1.0f);
+    node->flipped = false;
+    node->flipped = _buff;
+}
+
+void print_node(Node* node)
 {
     int* shape = node->h_meta->shape();
-    float* h_data = node->d_content->d_values_to_h();
     int ndim = node->h_meta->ndim;
     
     // output shape
@@ -188,11 +216,14 @@ void print_internal_node(InternalNode* node)
     for (int i = 0; i < ndim; ++i) { if (i > 0) cout<<", "; cout<<shape[i]; }
     cout<<"]"<<endl;
 
-    // output elements (truncated)
+    // output data (truncated)
     int total = node->d_content->size();
     int limit = total > 20 ? 20 : total;
 
-    cout<<"Op: "<<opToString(node->op)<<endl;
+    // handle values
+    if (!node->d_content || !node->d_content->values()) return;
+    float* h_data = node->d_content->d_values_to_h();
+
     cout<<"Data: [";
     for (int i = 0; i < limit; ++i)
     {
@@ -203,10 +234,23 @@ void print_internal_node(InternalNode* node)
     cout<<"]"<<endl;
 
     delete[] h_data;
+
+    // handle grad
+    if (!node->d_content || !node->d_content->grad()) return;
+    float* h_grad = node->d_content->d_grad_to_h();
+
+    cout<<"Grad: [";
+    for (int i = 0; i < limit; ++i)
+    {
+        if (i > 0) cout<<", ";
+        cout<<h_grad[i];
+    }
+    if (total > limit) cout<<", ... ("<<total<<" total)";
+    cout<<"]"<<endl;
+
+    delete[] h_grad;
 }
 // </Node>
-
-
 // <nodes interaction>
 //      <general operations>
 std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b, OpType op)
@@ -298,6 +342,7 @@ void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order)
 
 }
 
+
 void build_topo_grad(Node* node, unordered_set<Node*>& visited, vector<Node*>& order)
 {
     if (visited.count(node)) return;
@@ -309,9 +354,9 @@ void build_topo_grad(Node* node, unordered_set<Node*>& visited, vector<Node*>& o
         int num_outputs = 0;
         while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
         // same but with outputs
-        for (int i = 0; i < num_outputs; i++)
-            build_topo(inode->outputs[i].get(), visited, order);
+        for (int i = 0; i < num_outputs; i++) build_topo_grad(inode->outputs[i].get(), visited, order);
     }
+    // cout<<node->label<<" | ";
     order.push_back(node);
 }
 
@@ -319,25 +364,36 @@ vector<Node*> topo_sort(shared_ptr<InternalNode> node, bool grad)
 {
     unordered_set<Node*> visited;
     vector<Node*> order;
-    if (grad) build_topo_grad(node.get(), visited, order);
-    else build_topo(node.get(), visited, order);
+    if (grad) {
+        build_topo_grad(node.get(), visited, order);
+    } else {
+        build_topo(node.get(), visited, order);
+    }
+    return order;
+}
+
+vector<Node*> topo_sort(shared_ptr<Node> node, bool grad)
+{
+    unordered_set<Node*> visited;
+    vector<Node*> order;
+    if (grad) {
+        build_topo_grad(node.get(), visited, order);
+    } else {
+        build_topo(node.get(), visited, order);
+    }
     return order;
 }
 // </Topological sort>
 
 void eval(std::shared_ptr<InternalNode> root)
 {
-    cout<<endl;
-    cout<<"FROM 'node.cpp' FUNCTION: void evaluate"<<endl;
     // perform topological sort
     vector<Node*> order = topo_sort(root, false);
-    cout<<"order.size() = "<<order.size()<<endl;
-
     
     // walk in order
     for (Node* node : order)
     {   
-        cout<<"Current node: "<<node->label<<endl;
+        // cout<<"Current node: "<<node->label<<endl;
         if (node->kind == NodeKind::Source) continue;
 
         InternalNode* inode = static_cast<InternalNode*>(node);
@@ -345,7 +401,7 @@ void eval(std::shared_ptr<InternalNode> root)
         // allocate memory
         int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
         inode->d_content->allocate_values(size);
-        if (inode->d_content->values()) cout<<"values are allocated"<<endl;
+        // if (inode->d_content->values()) cout<<"values are allocated"<<endl;
         
         // dispatch
         switch (inode->op)
@@ -362,33 +418,110 @@ void eval(std::shared_ptr<InternalNode> root)
     }
 }
 
-void geval(std::shared_ptr<InternalNode> root)
+void eval(std::shared_ptr<Node> root)
 {
-    cout<<endl;
-    cout<<"FROM 'node.cpp' FUNCTION: void geval"<<endl;
     // perform topological sort
     vector<Node*> order = topo_sort(root, false);
-    cout<<"order.size() = "<<order.size()<<endl;
-
     
     // walk in order
     for (Node* node : order)
     {   
-        cout<<"Current node: "<<node->label<<endl;
+        // cout<<"Current node: "<<node->label<<endl;
         if (node->kind == NodeKind::Source) continue;
 
         InternalNode* inode = static_cast<InternalNode*>(node);
 
         // allocate memory
         int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
-        inode->d_content->allocate_grad(size);
+        inode->d_content->allocate_values(size);
+        // if (inode->d_content->values()) cout<<"values are allocated"<<endl;
+        
+        // dispatch
+        switch (inode->op)
+        {
+            case OpType::Add:
+                cu_ops::add(inode);
+                break;
+            case OpType::Mul:
+                cu_ops::mul(inode);
+                break;
+            case OpType::MatMul:
+                cu_ops::matmul(inode);
+            default:
+                break;
+        }
+    }
+}
+
+void geval(std::shared_ptr<InternalNode> root)
+{
+    // perform topological sort
+    vector<Node*> order = topo_sort(root, true);
+    cout<<"order.size() = "<<order.size()<<endl;
+
+    // fill the root node grad with beer
+    prepare_starting_grad(root);
+    
+    // walk in order
+    for (int i = order.size() - 2; i >= 0; --i)
+    {   
+        cout<<"Current node: "<<order[i]->label<<endl;
+        if (order[i]->kind == NodeKind::Source) continue;
+
+        InternalNode* inode = static_cast<InternalNode*>(order[i]);
+
+        // allocate grad
+        int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
+        inode->d_content->allocate(size);
+        inode->flipped = !inode->flipped;
+        cout<<"flipped="<<inode->flipped<<endl;
         if (inode->d_content->values()) cout<<"grad was allocated"<<endl;
         
         // dispatch
         switch (inode->op)
         {
             case OpType::Mul:
-                cu_ops::gmul(inode);
+                cu_ops::mul(inode);
+                break;
+            case OpType::Skip:
+                cu_ops::skip(inode);
+            default:
+                break;
+        }
+    }
+}
+
+void geval(std::shared_ptr<Node> root)
+{
+    // perform topological sort
+    vector<Node*> order = topo_sort(root, true);
+
+    int seed_size = utils::numel(root->h_meta->ndim, root->h_meta->shape());
+    root->d_content->allocate(seed_size);
+    bool _buff = root->flipped;
+    root->flipped = true;
+    cu_ops::fill(root.get(), 1.0f);
+    root->flipped = false;
+    root->flipped = _buff;
+
+    
+    // walk in order
+    for (int i = order.size() - 2; i >= 0; --i)
+    {   
+        if (order[i]->kind == NodeKind::Source) continue;
+
+        InternalNode* inode = static_cast<InternalNode*>(order[i]);
+
+        // allocate grad
+        int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
+        inode->d_content->allocate(size);
+        inode->flipped = !inode->flipped;
+        
+        // dispatch
+        switch (inode->op)
+        {
+            case OpType::Mul:
+                cu_ops::mul(inode);
                 break;
             case OpType::Skip:
                 cu_ops::skip(inode);

@@ -46,23 +46,21 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
         case OpType::Mul:
             {
                 auto bwd_a = copy_to_internal_node(inode->inputs[0]);
-                cout<<"bwd_a->label="<<bwd_a->label<<endl;
                 bwd_a->op = OpType::Mul;
                 bwd_node->outputs[0] = bwd_a;
-                bwd_a->num_inputs = 1;
+                bwd_a->num_inputs = 2;
                 bwd_a->inputs[0] = bwd_node;           // upstream gradient
-                // bwd_a->inputs[1] = inode->inputs[1];   // the OTHER input (b)
-                // cout<<"bwd_a->inputs: "<<bwd_a->inputs[0]->label<<" and "<<bwd_a->inputs[1]->label<<endl;
+                bwd_a->inputs[1] = copy_to_internal_node(inode->inputs[1]);   // the OTHER input (b)
                 bwd_a->param_count = param_count;
                 build_backward(inode->inputs[0], bwd_a, param_count);
 
                 auto bwd_b = copy_to_internal_node(inode->inputs[1]);
-                cout<<"bwd_b->label="<<bwd_b->label<<endl;
                 bwd_b->op = OpType::Mul;
                 bwd_node->outputs[1] = bwd_b;
-                bwd_b->num_inputs = 1;
-                bwd_b->inputs[0] = bwd_node;           // upstream gradient
-                // bwd_b->inputs[1] = inode->inputs[0];   // the OTHER input (a)
+                bwd_b->num_inputs = 2;
+                bwd_b->inputs[0] = bwd_node;
+                bwd_b->inputs[1] = copy_to_internal_node(inode->inputs[0]);   // the OTHER input (b)
+                
                 // cout<<"bwd_b->inputs: "<<bwd_b->inputs[0]->label<<" and "<<bwd_b->inputs[1]->label<<endl;
                 bwd_b->param_count = param_count;
                 build_backward(inode->inputs[1], bwd_b, param_count);
@@ -104,8 +102,13 @@ void _backward(shared_ptr<Node> node)
     {
         throw logic_error("Cannot use .backward() on this tensor.");
     }
-    shared_ptr<InternalNode> bwd_node = dynamic_pointer_cast<InternalNode>(node);
-    build_backward(node, bwd_node, node->param_count);
+    shared_ptr<InternalNode> bwd_node = copy_to_internal_node(node);
+    node->outputs[0] = bwd_node;
+    bwd_node->num_inputs = 1;
+    bwd_node->inputs[0] = node; 
+    bwd_node->op = OpType::Empty;
+    bwd_node->label = "BACKWARD GRAPH START";
+    build_backward(node, bwd_node, bwd_node->param_count);
 }
 
 

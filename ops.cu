@@ -5,6 +5,7 @@
 #include "utils.h"
 #include "ops.cuh"
 #include "kernels.cuh"
+#include <cudart_platform.h>
 
 
 
@@ -15,9 +16,9 @@ namespace cu_ops
 void add(InternalNode* res_node)
 {
     BroadcastInfo info = broadcast::elemwise(res_node);
-    float* res_data = res_node->d_content->values();
-    float* a_data = res_node->inputs[0]->d_content->values();
-    float* b_data = res_node->inputs[1]->d_content->values();
+    float* res_data = res_node->get_values();
+    float* a_data = res_node->inputs[0]->get_values();
+    float* b_data = res_node->inputs[1]->get_values();
     int n = res_node->d_content->size();
 
     int gridDim = (n + 255) / 256;
@@ -30,8 +31,8 @@ void gadd(InternalNode* res_node)
 {
     BroadcastInfo info = broadcast::elemwise(res_node);
     float* res_data = res_node->d_content->values();
-    float* a_data = res_node->inputs[0]->d_content->values();
-    float* b_data = res_node->inputs[1]->d_content->values();
+    float* a_data = res_node->inputs[0]->get_values();
+    float* b_data = res_node->inputs[1]->get_values();
     int n = res_node->d_content->size();
 
     int gridDim = (n + 255) / 256;
@@ -43,42 +44,80 @@ void gadd(InternalNode* res_node)
 void mul(InternalNode* res_node)
 {
     BroadcastInfo info = broadcast::elemwise(res_node);
-    float* res_data = res_node->d_content->values();
-    float* a_data = res_node->inputs[0]->d_content->values();
-    float* b_data = res_node->inputs[1]->d_content->values();
+    float* res_data = res_node->get_values();
+    float* a_data = res_node->inputs[0]->get_values();
+    float* b_data = res_node->inputs[1]->get_values();
     int n = res_node->d_content->size();
 
+    // cout<<"\n";
+    // cout<<"RESULT:"<<res_node->label<<" flipped="<<res_node->flipped<<endl;
+    // cout<<"node a: "<<res_node->inputs[0]->label<<" flipped="<<res_node->inputs[0]->flipped<<endl;
+    // cout<<"node b: "<<res_node->inputs[1]->label<<" flipped="<<res_node->inputs[1]->flipped<<endl;
+    // cout<<"\n";
+    
     int gridDim = (n + 255) / 256;
     int blockDim = 256;
     kernels::elemwise<cuMul><<<gridDim, blockDim>>>(a_data, b_data, res_data, info);
     cudaDeviceSynchronize();
 }
 
-void gmul(InternalNode* self)
+void matmul(InternalNode* res_node)
 {
-    // BroadcastInfo info = broadcast::elemwise(res_node);
-    // float* self_grad = self->d_content->grad();
-    // cout<<"HUUUUUY"<<endl;
-    // float* prev_grad = self->inputs[0]->d_content->grad();
-    // cout<<"HUUUUUY"<<endl;
-    // float* other_values = res_node->parallel->d_content->values(); 
-    // int n = res_node->d_content->size();
+    MatmulDims dims = broadcast::matmul(res_node);
+    
+    // created once, reused for every call
+    static cublasHandle_t handle = [](){
+        cublasHandle_t h;
+        cublasCreate(&h);
+        cublasSetMathMode(h, CUBLAS_DEFAULT_MATH);
 
-    // int gridDim = (n + 255) / 256;
-    // int blockDim = 256;
-    // kernels::elemwise<cuAdd><<<gridDim, blockDim>>>(prev_grad, other_values, self_grad, info);
-    cudaDeviceSynchronize();
+        // allocate 32MB workspace (check later)
+        // void* workspace;
+        // cudaMalloc(&workspace, 32 * 1024 * 1024);
+        // cublasSetWorkspace(h, workspace, 32 * 1024 * 1024);
+
+        return h;
+    }();
+
+    float* res_data = res_node->get_values();
+    float* a_data = res_node->inputs[0]->get_values();
+    float* b_data = res_node->inputs[1]->get_values();
+    float alpha = 1.0f, beta = 0.0f;
+
+    cublasGemmStridedBatchedEx(handle,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        dims.N, dims.M, dims.K,
+        &alpha,
+        b_data, CUDA_R_32F, dims.N, dims.K * dims.N,
+        a_data, CUDA_R_32F, dims.K, dims.M * dims.K,
+        &beta,
+        res_data, CUDA_R_32F, dims.N, dims.M * dims.N,
+        dims.batch,
+        CUBLAS_COMPUTE_32F,
+        CUBLAS_GEMM_DEFAULT_TENSOR_OP
+    );
 }
 
 void skip(InternalNode* res_node)
 {
-    float* res_grad = res_node->d_content->grad();
-    float* a_grad = res_node->inputs[0]->d_content->grad();
+    float* res_grad = res_node->get_values();
+    float* a_grad = res_node->inputs[0]->get_values();
     int size = res_node->d_content->size();
 
     int gridDim = (size + 255) / 256;
     int blockDim = 256;
-    kernels::copy<<<gridDim, blockDim>>>(res_grad, a_grad, size);
+    kernels::copy<<<gridDim, blockDim>>>(a_grad, res_grad, size);
+    cudaDeviceSynchronize();
+}
+
+void fill(Node* node, float val)
+{
+    float* data = node->get_values();
+    int size = node->d_content->size();
+
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+    kernels::fill<<<gridDim, blockDim>>>(data, val, size);
     cudaDeviceSynchronize();
 }
 
@@ -93,41 +132,15 @@ void fill(SourceNode* node, float val)
     cudaDeviceSynchronize();
 }
 
+void fill(InternalNode* node, float val)
+{
+    float* data = node->d_content->values();
+    int size = node->d_content->size();
 
-// float* matmul_cuda_launch(
-//     const float* A, const float* B, int batch, int M, int N, int K)
-// {
-//     // created once, reused for every call
-//     static cublasHandle_t handle = [](){
-//         cublasHandle_t h;
-//         cublasCreate(&h);
-//         cublasSetMathMode(h, CUBLAS_DEFAULT_MATH);
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+    kernels::fill<<<gridDim, blockDim>>>(data, val, size);
+    cudaDeviceSynchronize();
+}
 
-//         // allocate 32MB workspace
-//         void* workspace;
-//         cudaMalloc(&workspace, 32 * 1024 * 1024);
-//         cublasSetWorkspace(h, workspace, 32 * 1024 * 1024);
-
-//         return h;
-//     }();
-
-//     float* res_ptr;
-//     cudaMalloc(&res_ptr, batch * M * N * sizeof(float));
-
-//     float alpha = 1.0f, beta = 0.0f;
-
-//     cublasGemmStridedBatchedEx(handle,
-//         CUBLAS_OP_N, CUBLAS_OP_N,
-//         N, M, K,
-//         &alpha,
-//         B, CUDA_R_32F, N, K * N,
-//         A, CUDA_R_32F, K, M * K,
-//         &beta,
-//         res_ptr, CUDA_R_32F, N, M * N,
-//         batch,
-//         CUBLAS_COMPUTE_32F,
-//         CUBLAS_GEMM_DEFAULT_TENSOR_OP
-//     );
-//     return res_ptr;
-// }
 }

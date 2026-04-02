@@ -54,7 +54,7 @@ static const char* op_name(OpType op) {
         case OpType::Min:    return "Min";
         case OpType::ReLU:   return "ReLU";
         case OpType::Skip:   return "Skip";
-        case OpType::Empty:  return " ";
+        case OpType::Empty:  return "Empty";
     }
     return "??";
 }
@@ -665,9 +665,9 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
         int num_outputs = 0;
         while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
         for (int i = 0; i < num_outputs; i++) {
-            // string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
-            // out << "    " << id << " -> " << child_id
-            //     << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
+            out << "    " << id << " -> " << child_id
+                << " [color=\"#ff0000\" penwidth=1.5 arrowsize=0.8];\n";
             dot_emit_node_full(out, inode->outputs[i].get(), visited_nodes, visited_edges);
         }
     } else {
@@ -677,9 +677,9 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
         int num_outputs = 0;
         while (num_outputs < 4 && snode->outputs[num_outputs]) num_outputs++;
         for (int i = 0; i < num_outputs; i++) {
-            // string child_id = "n" + to_string((uintptr_t)snode->outputs[i].get());
-            //             // out << "    " << id << " -> " << child_id
-                        //     << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+            string child_id = "n" + to_string((uintptr_t)snode->outputs[i].get());
+                        out << "    " << id << " -> " << child_id
+                            << " [color=\"#ff0000\" penwidth=1.5 arrowsize=0.8];\n";
                                     dot_emit_node_full(out, snode->outputs[i].get(), visited_nodes, visited_edges);
         }
     }

@@ -35,10 +35,13 @@ struct Node
     NodeKind kind;
     ShapePtr h_meta;       // shape, strides, ndim on host (shareable between fwd/bwd nodes)
     ContentPtr d_content;    // values + grad on device (shareable between fwd/bwd nodes)
+    bool flipped = false; // for backward specifically, flips the values and grad in the ContentData
     int param_count = 0;
     string label; // just to test, remove later
     std::shared_ptr<Node> outputs[4]; // for grad
-
+    
+    float* get_values();
+    float* get_grad();
     virtual ~Node() = default;
 };
 
@@ -61,8 +64,10 @@ std::shared_ptr<InternalNode> make_internal_node_like(InternalNode* example);
 std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int param_count);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
-void print_internal_node(InternalNode* node);
-
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped);
+void prepare_starting_grad(std::shared_ptr<InternalNode> node);
+void prepare_starting_grad(std::shared_ptr<Node> node);
+void print_node(Node* node);
 
 // <nodes interaction>
 
@@ -83,8 +88,10 @@ std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims = fals
 void _build_topo(Node* node, unordered_set<Node*>& visited, vector<InternalNode*>& inodes, vector<SourceNode*>& snodes);
 void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order);
 vector<Node*> topo_sort(shared_ptr<InternalNode> node, bool grad);
-
+vector<Node*> topo_sort(shared_ptr<Node> node, bool grad);
 // </Topological sort>
 
 void eval(std::shared_ptr<InternalNode> root);
+void eval(std::shared_ptr<Node> root);
 void geval(std::shared_ptr<InternalNode> root);
+void geval(std::shared_ptr<Node> root);

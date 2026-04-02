@@ -12,6 +12,25 @@
 #include <memory>
 
 
+void print_all_nodes_labels(vector<Node*> nodes)
+{
+    cout<<"Source nodes: "<<endl;
+    for (int i = 0; i < nodes.size(); ++i)
+    {
+        cout<<"param_count="<<nodes[i]->param_count<<endl;
+    } 
+}
+
+void print_all_nodes_grads(vector<Node*> nodes)
+{
+    cout<<"Source nodes: "<<endl;
+    for (int i = 0; i < nodes.size(); ++i)
+    {
+        auto h_grad = nodes[i]->d_content->d_grad_to_h();
+        cout<<"Node "<<nodes[i]->label<<" grad: "<<h_grad[0]<<endl;
+    } 
+}
+
 std::shared_ptr<SourceNode> make_source_node(int ndim, int* shape, bool requires_grad) {
     auto node = std::make_shared<SourceNode>();
     node->kind = NodeKind::Source;
@@ -86,21 +105,33 @@ int main(void) {
     n4->label = "N4";
 
     // auto i1 = sum(n1, -1, true);
-    auto i2 = mul(n2, n1);
-    auto i3 = add(n3, i2);
-    auto i4 = mul(n4, i3);
+    auto i2 = mul(n2, n1); i2->label="i2";
+    auto i3 = add(n3, i2); i3->label="i3";
+    auto i4 = mul(n4, i3); i4->label="i4";
 
-    if (i4->d_content == nullptr) cout<<"i4->d_content = nullptr!"<<endl;
-    std::shared_ptr<InternalNode> q = std::dynamic_pointer_cast<InternalNode>(i4);
 
-    if (q->d_content == nullptr) cout<<"q->d_content = nullptr!"<<endl;
     _backward(i4);
-    // eval(q);
-    // geval(q);
-    export_dot_full(i4.get(), "turbofile");    
 
+    // auto _buff = i4->flipped;
+    // i4->d_content->allocate(utils::numel(i4->h_meta->ndim, i4->h_meta->shape()));
+    // i4->flipped = true;
+    // cu_ops::fill(i4.get(), 1.0f);
+    // i4->flipped = _buff;
 
-    // auto next = i4->outputs[1];
+    eval(i4);
+    geval(i4);
+    cout<<"Node n4: "<<endl;
+    print_node(n4.get());
+    print_all_nodes_grads({n1.get(), n2.get(), n3.get() ,n4.get()});
+    print_all_nodes_grads({i2.get(), i3.get(), i4.get()});
+    export_dot_full(i4.get(), "parovozik");    
+
+    // cout<<"i4 inputs[1]: "<<q->inputs[1]->label<<endl;
+
+    // print_all_nodes_labels({n1.get(), n2.get(), n3.get() ,n4.get()});
+    // print_all_nodes_labels({i2.get(), i3.get(), i4.get()});
+    // auto next = i4->outputs[0]->outputs[0];
+    // cout<<"HUUUUUY: "<<next->label<<endl;
     // if (next->kind == NodeKind::Internal) 
     // {
     //     auto _next = dynamic_pointer_cast<InternalNode>(next);

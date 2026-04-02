@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstddef>
 #include <cuda_runtime_api.h>
 #include <driver_types.h>
@@ -218,12 +219,32 @@ void ContentData::allocate_values(int size)
     }
 }
 
+void ContentData::allocate_values(void)
+{
+    if (!values_b_ptr)
+    {
+        if (!grad_b_ptr) throw logic_error("Grad was never allocated. unknown size.");
+        MemoryPool::call().allocate(&grad_b_ptr, size() * sizeof(float));
+    }
+    
+}
+
 void ContentData::allocate_grad(int size)
 {
     if (!grad_b_ptr)
     {
         MemoryPool::call().allocate(&grad_b_ptr, size * sizeof(float));
     }
+}
+
+void ContentData::allocate_grad(void)
+{
+    if (!grad_b_ptr)
+    {
+        if (!values_b_ptr) throw logic_error("Values were never allocated. unknown size.");
+        MemoryPool::call().allocate(&grad_b_ptr, size() * sizeof(float));
+    }
+    
 }
 
 void ContentData::allocate(int size)
@@ -247,9 +268,11 @@ float* ContentData::grad()
 }
 
 int ContentData::size()
-{
-    check_values();
-    return values_b_ptr->size / sizeof(float);
+{   
+    if (!values_b_ptr && !grad_b_ptr) throw logic_error("Nothing was allocated yet. nowhere to get size.");
+    if (values_b_ptr || values_b_ptr->size) return values_b_ptr->size / sizeof(float);
+    if (grad_b_ptr || grad_b_ptr->size) return grad_b_ptr->size / sizeof(float);
+    throw logic_error("Something is very very very wrong! Beer = liquid dopamine!");
 }
 
 size_t ContentData::bytes()
