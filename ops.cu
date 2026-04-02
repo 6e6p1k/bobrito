@@ -61,7 +61,8 @@ void mul(InternalNode* res_node)
     cudaDeviceSynchronize();
 }
 
-void matmul(InternalNode* res_node)
+// void matmul(InternalNode* res_node) {}
+void matmul(InternalNode* res_node) 
 {
     MatmulDims dims = broadcast::matmul(res_node);
     
@@ -84,8 +85,18 @@ void matmul(InternalNode* res_node)
     float* b_data = res_node->inputs[1]->get_values();
     float alpha = 1.0f, beta = 0.0f;
 
+    cout<<"MATMUL OP\n";
+    cout<<"A: flipped="<<res_node->inputs[0]->flipped<<" T="<<res_node->inputs[0]->transposed<<endl;
+    cout<<"B: flipped="<<res_node->inputs[1]->flipped<<" T="<<res_node->inputs[1]->transposed<<endl;
+
+    bool a_transposed = res_node->inputs[0]->transposed;
+    bool b_transposed = res_node->inputs[1]->transposed;
+    cublasOperation_t a_cublas_op = a_transposed ? CUBLAS_OP_T : CUBLAS_OP_N;
+    cublasOperation_t b_cublas_op = b_transposed ? CUBLAS_OP_T : CUBLAS_OP_N;
+
+
     cublasGemmStridedBatchedEx(handle,
-        CUBLAS_OP_N, CUBLAS_OP_N,
+        b_cublas_op, a_cublas_op,
         dims.N, dims.M, dims.K,
         &alpha,
         b_data, CUDA_R_32F, dims.N, dims.K * dims.N,

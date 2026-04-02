@@ -80,37 +80,37 @@ vector<Node*> get_roots(std::shared_ptr<InternalNode> node)
     return order;
 }
 
-int main(void) {
-    // f = (n1 * n2 + n3) * n4
+// int main(void) {
+//     // f = (n1 * n2 + n3) * n4
 
-    // (128, 28*28)
-    int s1[] = {128, 512};
-    // auto n1 = make_source_node(2, s1, true);
-    auto n1 = qq::fill(2, s1, 3.0, true);
-    n1->label = "N1";
+//     // (128, 28*28)
+//     int s1[] = {128, 512};
+//     // auto n1 = make_source_node(2, s1, true);
+//     auto n1 = qq::fill(2, s1, 3.0, true);
+//     n1->label = "N1";
 
-    // (1, 512)
-    int s2[] = {1, 512};
-    auto n2 = qq::fill(2, s2, 1.0, true);
-    n2->label = "N2";
+//     // (1, 512)
+//     int s2[] = {1, 512};
+//     auto n2 = qq::fill(2, s2, 1.0, true);
+//     n2->label = "N2";
 
-    // (1, 512)
-    int s3[] = {1, 512};
-    auto n3 = qq::fill(2, s3, 3.0, true);
-    n3->label = "N3";
+//     // (1, 512)
+//     int s3[] = {1, 512};
+//     auto n3 = qq::fill(2, s3, 3.0, true);
+//     n3->label = "N3";
 
-    //
-    int s4[] = {512, 128, 512};
-    auto n4 = qq::fill(3, s4, 3.0, true);
-    n4->label = "N4";
+//     //
+//     int s4[] = {512, 128, 512};
+//     auto n4 = qq::fill(3, s4, 3.0, true);
+//     n4->label = "N4";
 
-    // auto i1 = sum(n1, -1, true);
-    auto i2 = mul(n2, n1); i2->label="i2";
-    auto i3 = add(n3, i2); i3->label="i3";
-    auto i4 = mul(n4, i3); i4->label="i4";
+//     // auto i1 = sum(n1, -1, true);
+//     auto i2 = mul(n2, n1); i2->label="i2";
+//     auto i3 = add(n3, i2); i3->label="i3";
+//     auto i4 = mul(n4, i3); i4->label="i4";
 
 
-    _backward(i4);
+//     _backward(i4);
 
     // auto _buff = i4->flipped;
     // i4->d_content->allocate(utils::numel(i4->h_meta->ndim, i4->h_meta->shape()));
@@ -118,13 +118,13 @@ int main(void) {
     // cu_ops::fill(i4.get(), 1.0f);
     // i4->flipped = _buff;
 
-    eval(i4);
-    geval(i4);
-    cout<<"Node n4: "<<endl;
-    print_node(n4.get());
-    print_all_nodes_grads({n1.get(), n2.get(), n3.get() ,n4.get()});
-    print_all_nodes_grads({i2.get(), i3.get(), i4.get()});
-    export_dot_full(i4.get(), "parovozik");    
+    // eval(i4);
+    // geval(i4);
+    // cout<<"Node n4: "<<endl;
+    // print_node(n4.get());
+    // print_all_nodes_grads({n1.get(), n2.get(), n3.get() ,n4.get()});
+    // print_all_nodes_grads({i2.get(), i3.get(), i4.get()});
+    // export_dot_full(i4.get(), "parovozik");    
 
     // cout<<"i4 inputs[1]: "<<q->inputs[1]->label<<endl;
 
@@ -158,8 +158,8 @@ int main(void) {
 
 
     // print_internal_node(q.get());
-    return 0;
-}
+//     return 0;
+// }
 
 // visialize + export
 // g++ -std=c++17 -o visual visualize_graph.cpp utils.cpp grad.cpp graph_viz.cpp allocator_stub.cpp 2>&1 && ./visual

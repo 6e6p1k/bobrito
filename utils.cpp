@@ -1,5 +1,6 @@
 #include <iostream>
 #include <memory>
+#include <cstring>
 #include "utils.h"
 #include "node.h"
 
@@ -129,30 +130,55 @@ pair<int*, int> reduction(shared_ptr<Node> A, const int dim, const bool keepdims
 }
 
 pair<int*, int> matmul(int* a_shape, int* b_shape, int a_ndim, int b_ndim) {
-    int* res_shape = new int[a_ndim];
     if (!(a_ndim >= 2 && b_ndim >= 2))
         throw std::logic_error("Tensors rank should be at least 2.");
     if (a_shape[a_ndim - 1] != b_shape[b_ndim - 2])
         throw std::logic_error("k dimensions don't match.");
-    for (int i = 0; i < a_ndim - 2; i++)
-    {
-        res_shape[i] = a_shape[i];
-        if (a_shape[i] != b_shape[i]) 
-        {
-            free(res_shape);
+
+    int out_ndim = max(a_ndim, b_ndim);
+    int* res_shape = new int[out_ndim];
+
+    // check/broadcast batch dims (pad shorter one with 1s from left)
+    int a_off = out_ndim - a_ndim;
+    int b_off = out_ndim - b_ndim;
+    for (int i = 0; i < out_ndim - 2; i++) {
+        int a_dim = (i < a_off) ? 1 : a_shape[i - a_off];
+        int b_dim = (i < b_off) ? 1 : b_shape[i - b_off];
+        if (a_dim != b_dim && a_dim != 1 && b_dim != 1)
             throw std::logic_error("Batch dimensions should match.");
-        }
+        res_shape[i] = max(a_dim, b_dim);
     }
-    res_shape[a_ndim - 1] = a_shape[a_ndim - 2];
-    res_shape[a_ndim - 2] = b_shape[a_ndim - 1];
-    return {res_shape, a_ndim};
+
+    res_shape[out_ndim - 2] = a_shape[a_ndim - 2];
+    res_shape[out_ndim - 1] = b_shape[b_ndim - 1];
+    return {res_shape, out_ndim};
 }
 
 pair<int*, int> matmul(shared_ptr<Node> A, shared_ptr<Node> B) {
-    int* a_shape = A->h_meta->shape();
-    int* b_shape = B->h_meta->shape();
     int a_ndim = A->h_meta->ndim;
     int b_ndim = B->h_meta->ndim;
+    int* a_shape;
+    int* b_shape;
+
+    
+
+    // handle tranposed
+    if (A->transposed) {
+        a_shape = new int[a_ndim];
+        memcpy(a_shape, A->h_meta->shape(), A->h_meta->ndim * sizeof(int));
+        int tmp = a_shape[a_ndim - 1];
+        a_shape[a_ndim - 1] = a_shape[a_ndim - 2];
+        a_shape[a_ndim - 2] = tmp; 
+    } else a_shape = A->h_meta->shape();
+
+    if (B->transposed) {
+        b_shape = new int[b_ndim];
+        memcpy(b_shape, B->h_meta->shape(), B->h_meta->ndim * sizeof(int));
+        int tmp = b_shape[b_ndim - 1];
+        b_shape[b_ndim - 1] = b_shape[b_ndim - 2];
+        b_shape[b_ndim - 2] = tmp; 
+    } else b_shape = B->h_meta->shape();
+
     return matmul(a_shape, b_shape, a_ndim, b_ndim);
 }
 

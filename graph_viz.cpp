@@ -31,45 +31,48 @@ namespace clr {
 
 static const char* op_symbol(OpType op) {
     switch (op) {
-        case OpType::Add:    return "+";
-        case OpType::Mul:    return "✕";
-        case OpType::MatMul: return "⊗";
-        case OpType::Sum:    return "Σ";
-        case OpType::Max:    return "↑";
-        case OpType::Min:    return "↓";
-        case OpType::ReLU:   return " ";
-        case OpType::Skip:   return "→";
-        case OpType::Empty:  return " ";
+        case OpType::Add:           return "+";
+        case OpType::Mul:           return "✕";
+        case OpType::MatMul:        return "@";
+        case OpType::Sum:           return "Σ";
+        case OpType::Max:           return "↑";
+        case OpType::Min:           return "↓";
+        case OpType::ReLU:          return " ";
+        case OpType::Skip:          return "→";
+        case OpType::BwdStart:      return "▲";
+        case OpType::BwdHelper:     return "↺";
     }
     return "?";
 }
 
 static const char* op_name(OpType op) {
     switch (op) {
-        case OpType::Add:    return "Add";
-        case OpType::Mul:    return "Mul";
-        case OpType::MatMul: return "MatMul";
-        case OpType::Sum:    return "Sum";
-        case OpType::Max:    return "Max";
-        case OpType::Min:    return "Min";
-        case OpType::ReLU:   return "ReLU";
-        case OpType::Skip:   return "Skip";
-        case OpType::Empty:  return "Empty";
+        case OpType::Add:           return "Add";
+        case OpType::Mul:           return "Mul";
+        case OpType::MatMul:        return "MatMul";
+        case OpType::Sum:           return "Sum";
+        case OpType::Max:           return "Max";
+        case OpType::Min:           return "Min";
+        case OpType::ReLU:          return "ReLU";
+        case OpType::Skip:          return "Skip";
+        case OpType::BwdStart:      return "BwdStart";
+        case OpType::BwdHelper:     return "BwdHelper";
     }
     return "??";
 }
 
 static const char* op_color(OpType op) {
     switch (op) {
-        case OpType::Add:    return clr::bcyan;
-        case OpType::Mul:    return clr::bmagenta;
-        case OpType::MatMul: return clr::bblue;
-        case OpType::Sum:    return clr::byellow;
-        case OpType::Max:    return clr::bred;
-        case OpType::Min:    return clr::bgreen;
-        case OpType::ReLU:   return clr::byellow;
-        case OpType::Skip:   return clr::bblue;
-        case OpType::Empty:  return clr::gray;
+        case OpType::Add:       return clr::bcyan;
+        case OpType::Mul:       return clr::bmagenta;
+        case OpType::MatMul:    return clr::bblue;
+        case OpType::Sum:       return clr::byellow;
+        case OpType::Max:       return clr::bred;
+        case OpType::Min:       return clr::bgreen;
+        case OpType::ReLU:      return clr::byellow;
+        case OpType::Skip:      return clr::bblue;
+        case OpType::BwdStart:  return clr::gray;
+        case OpType::BwdHelper: return clr::gray;
     }
     return clr::reset;
 }
@@ -599,39 +602,71 @@ static string escape_html(const string& s) {
 static void dot_emit_node_label(ofstream& out, Node* node) {
     string id = "n" + to_string((uintptr_t)node);
     string shape_s = shape_str(node->h_meta);
+    
 
     if (node->kind == NodeKind::Internal) {
         InternalNode* inode = static_cast<InternalNode*>(node);
         string sym = escape_html(op_symbol(inode->op));
         string name = op_name(inode->op);
         const char* color = dot_op_color(inode->op);
-
+        
+        string label_;
+        if (node->label != "")
+        {
+            label_ = "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">label = </FONT><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffff00\">" + node->label + "</FONT></TD></TR>";
+        } else {
+            label_ = "";
+        }
         out << "    " << id << " [\n"
             << "        label=<"
             << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"4\">"
-            << "<TR><TD COLSPAN=\"2\"><FONT POINT-SIZE=\"18\">" << sym << "</FONT> <B>" << name << "</B></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">param_count: " << node->param_count << "</FONT></TD></TR>"
+            << "<TR><TD COLSPAN=\"2\"><FONT POINT-SIZE=\"20\" COLOR=\"#ffffff\">" <<sym<<" "<< "</FONT><FONT POINT-SIZE=\"18\" COLOR=\"#ffffff\" ><B>" <<name<< "</B></FONT></TD></TR>"
+
+            << label_
+
+            << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">Shape: </FONT>"
+            << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#04ff00\">"<<shape_s<<"</FONT></TD></TR>"
+
+            << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">param_count = </FONT>"
+            << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#0091ff\">" <<node->param_count<< "</FONT></TD></TR>"
+            
+            << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">flipped = </FONT>"     << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ff00c8\">" <<(node->flipped ? "true" : "false")    << "</FONT></TD></TR>"
+            << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">transposed = </FONT>"  << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ff00c8\">" <<(node->transposed ? "true" : "false") << "</FONT></TD></TR>"
             << "</TABLE>>\n"
-            << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
-            << "        penwidth=2 color=\"" << color << "30\"\n"
+            << "        shape=box style=\"rounded\" width=0 height=0 margin=\"0.1\" \n"
+            << "        penwidth=2 color=\"#FFFFFF\"\n"
             << "    ];\n";
     } else {
         SourceNode* snode = static_cast<SourceNode*>(node);
         const char* color = snode->h_requiers_grad ? "#C8E6C9" : "#E0E0E0";
         const char* border = snode->h_requiers_grad ? "#66BB6A" : "#BDBDBD";
 
+        string label_;
+        if (node->label != "")
+        {
+            label_ = "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">label = </FONT><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffff00\">" + node->label + "</FONT></TD></TR>";
+        } else {
+            label_ = "";
+        }
+
         out << "    " << id << " [\n"
             << "        label=<"
             << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\">"
-            << "<TR><TD><B>Source</B></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#555555\">Shape: " << shape_s << "</FONT></TD></TR>"
-            << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"10\" COLOR=\"#2196F3\">param_count: " << snode->param_count << "</FONT></TD></TR>";
+            << "<TR><TD><FONT POINT-SIZE=\"18\" COLOR=\"#ffffff\"><B>Source</B></FONT></TD></TR>"
+
+            << label_
+
+            << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">Shape: </FONT>"
+            << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#04ff00\">"<<shape_s<<"</FONT></TD></TR>"
+
+            << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">param_count = </FONT>"
+            << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#0091ff\">" <<node->param_count<< "</FONT></TD></TR>";
+
         if (snode->h_requiers_grad)
-            out << "<TR><TD ALIGN=\"LEFT\"><FONT POINT-SIZE=\"9\" COLOR=\"#388E3C\">requires_grad</FONT></TD></TR>";
+            out << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">requires_grad = </FONT>"     << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ff00c8\">" <<(snode->h_requiers_grad ? "true" : "false")    << "</FONT></TD></TR>";
         out << "</TABLE>>\n"
-            << "        shape=box style=\"rounded,filled\" fillcolor=\"" << color << "\"\n"
-            << "        penwidth=2 color=\"" << border << "\"\n"
+            << "        shape=box style=\"rounded\"\n"
+            << "        penwidth=2 color=\"#FFFFFF\"\n"
             << "    ];\n";
     }
 }
@@ -657,7 +692,7 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
             if (!inode->inputs[i]) continue;
             string child_id = "n" + to_string((uintptr_t)inode->inputs[i].get());
             out << "    " << child_id << " -> " << id
-                << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
+                << " [color=\"#FFFFFF\" penwidth=3 arrowsize=1.2];\n";
             dot_emit_node_full(out, inode->inputs[i].get(), visited_nodes, visited_edges);
         }
 
@@ -667,7 +702,7 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
         for (int i = 0; i < num_outputs; i++) {
             string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
             out << "    " << id << " -> " << child_id
-                << " [color=\"#ff0000\" penwidth=1.5 arrowsize=0.8];\n";
+                << " [color=\"#00ffff\" penwidth=3 arrowsize=1.2];\n";
             dot_emit_node_full(out, inode->outputs[i].get(), visited_nodes, visited_edges);
         }
     } else {
@@ -678,9 +713,9 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
         while (num_outputs < 4 && snode->outputs[num_outputs]) num_outputs++;
         for (int i = 0; i < num_outputs; i++) {
             string child_id = "n" + to_string((uintptr_t)snode->outputs[i].get());
-                        out << "    " << id << " -> " << child_id
-                            << " [color=\"#ff0000\" penwidth=1.5 arrowsize=0.8];\n";
-                                    dot_emit_node_full(out, snode->outputs[i].get(), visited_nodes, visited_edges);
+            out << "    " << id << " -> " << child_id
+                << " [color=\"#00ffff\" penwidth=3 arrowsize=1.2];\n";
+            dot_emit_node_full(out, snode->outputs[i].get(), visited_nodes, visited_edges);
         }
     }
 }
@@ -707,12 +742,12 @@ void export_dot_full(Node* start, const char* filename) {
     ofstream out(filename);
     out << "digraph FullGraph {\n"
         << "    rankdir=BT;\n"
-        << "    bgcolor=\"#FAFAFA\";\n"
-        << "    pad=1.0;\n"
-        << "    nodesep=1.0;\n"
+        << "    bgcolor=\"#000000\";\n"
+        << "    pad=1.2;\n"
+        << "    nodesep=1.5;\n"
         << "    ranksep=1.5;\n"
-        << "    node [fontname=\"Helvetica\" fontsize=12 margin=\"0.2,0.1\"];\n"
-        << "    edge [fontname=\"Helvetica\" fontsize=9];\n\n";
+        << "    node [fontname=\"Ubuntu\" fontsize=12 margin=\"0.2,0.1\" fontcolor=\"#FFFFFF\" width=0 height=0];\n"
+        << "    edge [fontname=\"Ubuntu\" fontsize=9];\n\n";
 
     // highlight starting node
     string start_id = "n" + to_string((uintptr_t)start);

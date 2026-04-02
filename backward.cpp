@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -25,7 +26,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
     switch (inode->op) {
         case OpType::Add:
             {
-                auto bwd_a = copy_to_internal_node(inode->inputs[0]);
+                auto bwd_a = gcopy_to_internal_node(inode->inputs[0]);
                 bwd_node->outputs[0] = bwd_a; // connect via outputs
                 bwd_a->num_inputs = 1;
                 bwd_a->inputs[0] = bwd_node; // connect via inputs
@@ -33,7 +34,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 bwd_a->param_count = param_count;
                 build_backward(inode->inputs[0], bwd_a, param_count);
                 
-                auto bwd_b = copy_to_internal_node(inode->inputs[1]);
+                auto bwd_b = gcopy_to_internal_node(inode->inputs[1]);
                 bwd_node->outputs[1] = bwd_b; // connect via outputs
                 bwd_b->num_inputs = 1;
                 bwd_b->inputs[0] = bwd_node; // connect via inputs
@@ -45,7 +46,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
             
         case OpType::Mul:
             {
-                auto bwd_a = copy_to_internal_node(inode->inputs[0]);
+                auto bwd_a = gcopy_to_internal_node(inode->inputs[0]);
                 bwd_a->op = OpType::Mul;
                 bwd_node->outputs[0] = bwd_a;
                 bwd_a->num_inputs = 2;
@@ -54,7 +55,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 bwd_a->param_count = param_count;
                 build_backward(inode->inputs[0], bwd_a, param_count);
 
-                auto bwd_b = copy_to_internal_node(inode->inputs[1]);
+                auto bwd_b = gcopy_to_internal_node(inode->inputs[1]);
                 bwd_b->op = OpType::Mul;
                 bwd_node->outputs[1] = bwd_b;
                 bwd_b->num_inputs = 2;
@@ -69,19 +70,35 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
 
         case OpType::MatMul:
             {
-                auto bwd_a = copy_to_internal_node(inode->inputs[0]);
-                bwd_a->op = OpType::MatMul;
+                // A = inode->inputs[0]
+                // B = innode->inputs[1]
+                // C = inode    (dC = gradient of C, which is in bwd_node)
+                // C = A @ B
+                auto dC = bwd_node;
+
+                // dC/dA = dC @ B_T
+                // CHECK if shapes match, otherwise out = (dC/dA).sum(dim=0, keepdims=false)
+                auto bwd_a = gcopy_to_internal_node(inode->inputs[0]);
+                auto B_T = copy_to_internal_node(inode->inputs[1], false, true, OpType::BwdHelper);
+                auto dC_dA = matmul(dC, B_T);
+                if (dC_dA->h_meta->shape() != bwd_a->h_meta->shape()) bwd_a->op = OpType::Sum;
+                else bwd_a->op = OpType::Skip;
                 bwd_node->outputs[0] = bwd_a;
-                bwd_a->inputs[0] = bwd_node; // gradient
-                bwd_a->inputs[1] = fwd_node; // needs transpose
+                bwd_a->num_inputs = 1;
+                bwd_a->inputs[0] = dC_dA;
                 bwd_a->param_count = param_count;
                 build_backward(inode->inputs[0], bwd_a, param_count);
 
-                auto bwd_b = copy_to_internal_node(inode->inputs[1]);
-                bwd_b->op = OpType::MatMul;
+                // dC/dB = A_T @ dC
+                // CHECK if shapes match, otherwise dC = (dC/dB).sum(dim=0, keepdims=false)
+                auto bwd_b = gcopy_to_internal_node(inode->inputs[1]);
+                auto A_T = copy_to_internal_node(inode->inputs[0], false, true, OpType::BwdHelper);
+                auto dC_dB = matmul(A_T, dC);
+                if (dC_dB->h_meta->shape() != bwd_b->h_meta->shape()) bwd_b->op = OpType::Sum; // assuming that sum sees the out shape and like ah i get it
+                bwd_b->op = OpType::Skip;
                 bwd_node->outputs[1] = bwd_b;
-                bwd_b->inputs[0] = fwd_node; // needs transpose
-                bwd_b->inputs[1] = fwd_node; // gradient
+                bwd_b->num_inputs = 1;
+                bwd_b->inputs[0] = dC_dB; // needs transpose
                 bwd_b->param_count = param_count;
                 build_backward(inode->inputs[1], bwd_b, param_count);
             }
@@ -106,7 +123,7 @@ void _backward(shared_ptr<Node> node)
     node->outputs[0] = bwd_node;
     bwd_node->num_inputs = 1;
     bwd_node->inputs[0] = node; 
-    bwd_node->op = OpType::Empty;
+    bwd_node->op = OpType::BwdStart;
     bwd_node->label = "BACKWARD GRAPH START";
     build_backward(node, bwd_node, bwd_node->param_count);
 }

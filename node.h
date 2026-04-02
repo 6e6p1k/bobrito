@@ -5,7 +5,7 @@
 
 #include "allocator.cuh"
 
-enum class OpType { Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip, Empty};
+enum class OpType { Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip, BwdStart, BwdHelper};
 ostream& operator<<(std::ostream& os, const OpType& op);
 string opToString(const OpType& op);
 
@@ -36,6 +36,7 @@ struct Node
     ShapePtr h_meta;       // shape, strides, ndim on host (shareable between fwd/bwd nodes)
     ContentPtr d_content;    // values + grad on device (shareable between fwd/bwd nodes)
     bool flipped = false; // for backward specifically, flips the values and grad in the ContentData
+    bool transposed = false; 
     int param_count = 0;
     string label; // just to test, remove later
     std::shared_ptr<Node> outputs[4]; // for grad
@@ -64,7 +65,8 @@ std::shared_ptr<InternalNode> make_internal_node_like(InternalNode* example);
 std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int param_count);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
-std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped);
+std::shared_ptr<InternalNode> gcopy_to_internal_node(std::shared_ptr<Node> example);
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped, bool transposed, OpType op);
 void prepare_starting_grad(std::shared_ptr<InternalNode> node);
 void prepare_starting_grad(std::shared_ptr<Node> node);
 void print_node(Node* node);
@@ -81,6 +83,7 @@ std::shared_ptr<Node> mul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
 std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims = false);
 std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims = false);
 std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims = false);
+std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
 
 // </nodes interaction>
 

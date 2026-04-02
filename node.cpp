@@ -146,7 +146,18 @@ std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> exampl
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
     node->param_count = param_count;
-    node->label = example->label;
+    node->label = example->label + "_copy";
+    return node;
+}
+
+std::shared_ptr<InternalNode> gcopy_to_internal_node(std::shared_ptr<Node> example)
+{
+    auto node = std::make_shared<InternalNode>();
+    node->kind = NodeKind::Internal;
+    node->h_meta = example->h_meta;
+    node->d_content = example->d_content;
+    node->label = example->label + "_grad";
+    node->param_count = example->param_count;
     return node;
 }
 
@@ -156,20 +167,22 @@ std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> exampl
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
-    node->label = example->label;
+    node->label = example->label + "_copy";
     node->param_count = example->param_count;
     return node;
 }
 
-std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped)
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped, bool transposed, OpType op)
 {
     auto node = std::make_shared<InternalNode>();
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_content = example->d_content;
-    node->label = example->label;
+    node->label = example->label + "_copy";
     if (flipped) node->flipped = !node->flipped;
+    node->transposed = transposed;
     node->param_count = example->param_count;
+    node->op = op;
     return node;
 }
 
@@ -295,7 +308,7 @@ std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b)
     auto node = make_internal_node(
         OpType::MatMul, inputs, 2, res_shape, res_ndim
     );
-    node->label = a->label + opToString(OpType::MatMul); // remove later
+    node->label = "(" + a->label + " " + opToString(OpType::MatMul) + " " + b->label + ")"; // remove later
     return node;
 }
 std::shared_ptr<Node> skip(std::shared_ptr<Node> a)
@@ -447,6 +460,7 @@ void eval(std::shared_ptr<Node> root)
                 break;
             case OpType::MatMul:
                 cu_ops::matmul(inode);
+                break;
             default:
                 break;
         }
@@ -485,6 +499,7 @@ void geval(std::shared_ptr<InternalNode> root)
                 break;
             case OpType::Skip:
                 cu_ops::skip(inode);
+                break;
             default:
                 break;
         }
@@ -525,6 +540,10 @@ void geval(std::shared_ptr<Node> root)
                 break;
             case OpType::Skip:
                 cu_ops::skip(inode);
+                break;
+            case OpType::MatMul:
+                cu_ops::matmul(inode);
+                break;
             default:
                 break;
         }
