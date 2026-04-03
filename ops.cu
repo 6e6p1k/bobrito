@@ -1,11 +1,14 @@
+#include <cuda_runtime_api.h>
 #include <iostream>
 #include <cublas_v2.h>
 #include <ostream>
+#include "allocator.cuh"
 #include "node.h"
 #include "utils.h"
 #include "ops.cuh"
 #include "kernels.cuh"
 #include <cudart_platform.h>
+#include <cub/cub.cuh>
 
 
 
@@ -85,10 +88,6 @@ void matmul(InternalNode* res_node)
     float* b_data = res_node->inputs[1]->get_values();
     float alpha = 1.0f, beta = 0.0f;
 
-    cout<<"MATMUL OP\n";
-    cout<<"A: flipped="<<res_node->inputs[0]->flipped<<" T="<<res_node->inputs[0]->transposed<<endl;
-    cout<<"B: flipped="<<res_node->inputs[1]->flipped<<" T="<<res_node->inputs[1]->transposed<<endl;
-
     bool a_transposed = res_node->inputs[0]->transposed;
     bool b_transposed = res_node->inputs[1]->transposed;
     cublasOperation_t a_cublas_op = a_transposed ? CUBLAS_OP_T : CUBLAS_OP_N;
@@ -107,6 +106,55 @@ void matmul(InternalNode* res_node)
         CUBLAS_COMPUTE_32F,
         CUBLAS_GEMM_DEFAULT_TENSOR_OP
     );
+}
+
+//  float* src, float* dst, int* shape, int ndim, int n)
+void reduce_last_dim(InternalNode* res_node) {
+    float* res_data = res_node->d_content->values();
+    float* input_data = res_node->inputs[0]->d_content->values();
+    int* shape = res_node->inputs[0]->h_meta->shape();
+    int ndim = res_node->inputs[0]->h_meta->ndim;
+    int size = res_node->inputs[0]->d_content->size();
+    
+    int last_dim = shape[ndim - 1];
+    int num_segments = size / last_dim;
+    
+    // build offsets
+    
+    Block* b_ptr;
+    MemoryPool::call().allocate(&b_ptr, (num_segments + 1) * sizeof(int), BlockKind::MetaData);
+    int* offsets = b_ptr->meta_ptr;
+    // fill offsets: 0, last_dim, 2*last_dim, ...
+    int gridDim = (num_segments + 1 + 255) / 256;
+    int blockDim = 256;
+
+    kernels::reduction_offsets<<<gridDim, blockDim>>>(offsets, last_dim, num_segments);
+    cudaDeviceSynchronize();
+
+    Block* temp_storage_block;
+    size_t temp_storage_bytes = 0;
+    
+    // first call to get temp storage size
+    cub::DeviceSegmentedReduce::Sum(
+        nullptr, temp_storage_bytes,
+        input_data, res_data,
+        num_segments,
+        offsets, offsets + 1
+    );
+    
+    MemoryPool::call().allocate(&temp_storage_block, temp_storage_bytes);
+    float* temp_storage = temp_storage_block->d_ptr; 
+
+    // second call to actually reduce
+    cub::DeviceSegmentedReduce::Sum(
+        temp_storage, temp_storage_bytes,
+        input_data, res_data,
+        num_segments,
+        offsets, offsets + 1
+    );
+    
+    MemoryPool::call().free(b_ptr);
+    MemoryPool::call().free(temp_storage_block);
 }
 
 void skip(InternalNode* res_node)
@@ -154,4 +202,19 @@ void fill(InternalNode* node, float val)
     cudaDeviceSynchronize();
 }
 
+void contiguous(InternalNode* res_node)
+{
+    ContiguousInfo info = broadcast::contiguous(res_node);
+    float* res_data = res_node->get_values();
+    float* data = res_node->inputs[0]->get_values();
+    int size = res_node->d_content->size();
+    
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+
+    kernels::contiguous<<<gridDim, blockDim>>>(data, res_data, size, info);
+    cudaDeviceSynchronize();
 }
+}
+
+// __global__ void contiguous(float* src, float* dst, int* shape, int* strides, int ndim, int size);

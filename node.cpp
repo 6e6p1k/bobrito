@@ -1,42 +1,50 @@
 #include <atomic>
 #include <cstddef>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <unordered_set>
 #include <vector>
+#include <cstring>
 
 #include "utils.h"
 #include "allocator.cuh"
 #include "ops.cuh"
 #include "node.h"
 
+using namespace std;
+
 // <helper for OpType>
 ostream& operator<<(std::ostream& os, const OpType& op) 
 {
     switch (op) {
-        case OpType::Add:       return os << "+";
-        case OpType::Mul:       return os << "*";
-        case OpType::Sum:       return os << "∑";
-        case OpType::Min:       return os << ".min()";
-        case OpType::Max:       return os << ".max()";
-        case OpType::MatMul:    return os << "@";
-        case OpType::Skip:      return os << ".skip()";
-        default:                return os << "Unknown";
+        case OpType::Add:               return os << "+";
+        case OpType::Mul:               return os << "*";
+        case OpType::Sum:               return os << "∑";
+        case OpType::Min:               return os << ".min()";
+        case OpType::Max:               return os << ".max()";
+        case OpType::MatMul:            return os << "@";
+        case OpType::Skip:              return os << ".skip()";
+        case OpType::Contiguous:        return os << "~";
+        case OpType::Reshape:           return os << "RR";
+        default:                        return os << "Unknown";
     }
 }
 
 string opToString(const OpType& op)
 {
     switch (op) {
-        case OpType::Add:       return "+";
-        case OpType::Mul:       return "*";
-        case OpType::Sum:       return ".sum()";
-        case OpType::Min:       return ".min()";
-        case OpType::Max:       return ".max()";
-        case OpType::MatMul:    return "@";
-        case OpType::Skip:      return ".skip()";
-        default:                return "Unknown";
+        case OpType::Add:           return "+";
+        case OpType::Mul:           return "*";
+        case OpType::Sum:           return ".sum()";
+        case OpType::Min:           return ".min()";
+        case OpType::Max:           return ".max()";
+        case OpType::MatMul:        return "@";
+        case OpType::Skip:          return ".skip()";
+        case OpType::Contiguous:    return ".contiguous()";
+        case OpType::Reshape:       return ".reshape()";
+        default:                    return "Unknown";
     }
 }
 // </helper for OpType>
@@ -249,7 +257,7 @@ void print_node(Node* node)
     delete[] h_data;
 
     // handle grad
-    if (!node->d_content || !node->d_content->grad()) return;
+    if (!node->d_content->is_grad()) { cout<<"No grad computed yet."<<endl; return; }
     float* h_grad = node->d_content->d_grad_to_h();
 
     cout<<"Grad: [";
@@ -298,7 +306,6 @@ std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, boo
 //      <ops>
 std::shared_ptr<Node> add(std::shared_ptr<Node> a, std::shared_ptr<Node> b) { return elemwise(a, b, OpType::Add); }
 std::shared_ptr<Node> mul(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b) { return elemwise(a, b, OpType::Mul); }
-std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims) { return reduction(a, dim, OpType::Sum, keepdims); }
 std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims) { return reduction(a, dim, OpType::Max, keepdims); }
 std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims) { return reduction(a, dim, OpType::Min, keepdims); }
 std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b)
@@ -318,6 +325,95 @@ std::shared_ptr<Node> skip(std::shared_ptr<Node> a)
         OpType::Skip, inputs, 1, a->h_meta->shape(), a->h_meta->ndim
     );
     return node;
+}
+std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a)
+{
+    std::shared_ptr<Node> inputs[] = {a};
+    int* res_strides = new int[a->h_meta->ndim];
+    utils::compute_strides(res_strides, a->h_meta->ndim, a->h_meta->shape());
+    auto node = make_internal_node(
+        OpType::Contiguous, inputs, 1, a->h_meta->shape(), a->h_meta->ndim, res_strides
+    );
+    node->label= "contiguous(" + a->label + ")";
+    return node;
+}
+std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_ndim)
+{
+    // quick check
+    if (utils::numel(a->h_meta->ndim, a->h_meta->shape()) != utils::numel(res_ndim, res_shape))
+        throw std::logic_error("Cannot broadcast this.");
+
+    // compute new strides
+    int* res_strides = new int[res_ndim];
+    utils::compute_strides(res_strides, res_ndim, res_shape);
+    
+    // make output node 
+    std::shared_ptr<Node> inputs[] = {a};
+    std::shared_ptr<InternalNode> node = std::make_shared<InternalNode>();
+    node->kind = NodeKind::Internal;
+    node->op = OpType::Reshape;
+    node->num_inputs = 1;
+    node->h_meta = make_shape_data(res_ndim, res_shape, res_strides);
+    node->d_content = a->d_content; // data isn't changed
+    node->label = "reshape(" + a->label + ")";
+
+    // connect inputs to outputs and vice versa
+    for (int i = 0; i < 1; i++)
+    {
+        node->inputs[i] = inputs[i];
+        node->param_count += inputs[i]->param_count;
+        if (inputs[i]->outputs[0] == nullptr) inputs[i]->outputs[0] = node;
+        else inputs[i]->outputs[1] = node;
+    }
+    return node;
+}
+
+std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a)
+{
+    int res_ndim = a->h_meta->ndim - 1;
+    int res_shape[res_ndim];
+    for (int i = 0; i < res_ndim; ++i) res_shape[i] = a->h_meta->shape()[i];
+    std::shared_ptr<Node> inputs[] = {a};
+    cout<<"NDIM="<<res_ndim<<endl;
+    auto node = make_internal_node(
+        OpType::Sum, inputs, 1, res_shape, res_ndim
+    );
+    node->label = "sum_last_dim(" + a->label + ")";
+    return node;
+}
+
+std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims)
+{
+    // handle negative indexing
+    int ndim = a->h_meta->ndim;
+    dim = (dim + ndim) % ndim;;
+    
+    if (dim == ndim - 1 && !keepdims) return sum_last_dim(a);
+    
+    int* shape_copy = new int[ndim];
+    memcpy(shape_copy, a->h_meta->shape(), ndim * sizeof(int));
+
+    // 1. reshape, put the dim to the end
+    shape_copy[ndim - 1] = a->h_meta->shape()[dim];
+    shape_copy[dim] = a->h_meta->shape()[ndim - 1];
+    std::shared_ptr<Node> reshaped_node = reshape(a, shape_copy, ndim); 
+
+    // 2. make contiguous
+    std::shared_ptr<Node> contiguous_node = contiguous(reshaped_node);
+
+    // 3. perform last dim reduction
+    std::shared_ptr<Node> node_after_sum = sum_last_dim(contiguous_node);
+
+    // 4. if keepdims = True, insert another dim
+    if (keepdims)
+    {
+        int* res_shape = new int[ndim];
+        for (int i = 0; i < ndim; ++i)
+            res_shape[i] = (i == dim) ? 1 : a->h_meta->shape()[i];
+        std::shared_ptr<Node> node = reshape(node_after_sum, res_shape, ndim);
+        return node;
+    }
+    return node_after_sum;
 }
 //      </ops>
 // </nodes interaction>
@@ -460,6 +556,12 @@ void eval(std::shared_ptr<Node> root)
                 break;
             case OpType::MatMul:
                 cu_ops::matmul(inode);
+                break;
+            case OpType::Contiguous:
+                cu_ops::contiguous(inode);
+                break;
+            case OpType::Sum:
+                cu_ops::reduce_last_dim(inode);
                 break;
             default:
                 break;

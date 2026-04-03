@@ -6,6 +6,7 @@
 #include "utils.h"
 #include "visualize_graph.h"
 
+using namespace std;
 
 int main_(void) {
     // f = (n1 * n2 + n3) * n4

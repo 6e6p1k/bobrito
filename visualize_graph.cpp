@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <memory>
 
+using namespace std;
 
 void print_all_nodes_labels(vector<Node*> nodes)
 {

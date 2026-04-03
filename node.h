@@ -5,9 +5,9 @@
 
 #include "allocator.cuh"
 
-enum class OpType { Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip, BwdStart, BwdHelper};
-ostream& operator<<(std::ostream& os, const OpType& op);
-string opToString(const OpType& op);
+enum class OpType { Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip, Contiguous, Reshape, BwdStart, BwdHelper};
+std::ostream& operator<<(std::ostream& os, const OpType& op);
+std::string opToString(const OpType& op);
 
 enum class NodeKind { Source, Internal };
 
@@ -38,7 +38,7 @@ struct Node
     bool flipped = false; // for backward specifically, flips the values and grad in the ContentData
     bool transposed = false; 
     int param_count = 0;
-    string label; // just to test, remove later
+    std::string label; // just to test, remove later
     std::shared_ptr<Node> outputs[4]; // for grad
     
     float* get_values();
@@ -84,14 +84,16 @@ std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims = fals
 std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims = false);
 std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims = false);
 std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
-
+std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a);
+std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_ndim);
+std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a);
 // </nodes interaction>
 
 // <Topological sort>
-void _build_topo(Node* node, unordered_set<Node*>& visited, vector<InternalNode*>& inodes, vector<SourceNode*>& snodes);
-void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order);
-vector<Node*> topo_sort(shared_ptr<InternalNode> node, bool grad);
-vector<Node*> topo_sort(shared_ptr<Node> node, bool grad);
+void _build_topo(Node* node, std::unordered_set<Node*>& visited, std::vector<InternalNode*>& inodes, std::vector<SourceNode*>& snodes);
+void build_topo(Node* node, std::unordered_set<Node*>& visited, std::vector<Node*>& order);
+std::vector<Node*> topo_sort(std::shared_ptr<InternalNode> node, bool grad);
+std::vector<Node*> topo_sort(std::shared_ptr<Node> node, bool grad);
 // </Topological sort>
 
 void eval(std::shared_ptr<InternalNode> root);

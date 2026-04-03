@@ -8,6 +8,7 @@
 
 #include "node.h"
 
+using namespace std;
 
 void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node, int param_count) {
     
@@ -46,23 +47,35 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
             
         case OpType::Mul:
             {
+                // A = inode->inputs[0]
+                // B = innode->inputs[1]
+                // C = inode    (dC = gradient of C, which is in bwd_node)
+                // C = A * B
+                auto dC = bwd_node;
+
+                // dC/dA = dC * B
+                // CHECK if shapes match, otherwise out = (dC/dA).sum(dim=0, keepdims=false)
                 auto bwd_a = gcopy_to_internal_node(inode->inputs[0]);
-                bwd_a->op = OpType::Mul;
+                auto B = copy_to_internal_node(inode->inputs[1], false, false, OpType::BwdHelper);
+                auto dC_dA = mul(dC, B);
+                if (dC_dA->h_meta->ndim != bwd_a->h_meta->ndim) bwd_a->op = OpType::Sum;
+                else bwd_a->op = OpType::Skip;
                 bwd_node->outputs[0] = bwd_a;
-                bwd_a->num_inputs = 2;
-                bwd_a->inputs[0] = bwd_node;           // upstream gradient
-                bwd_a->inputs[1] = copy_to_internal_node(inode->inputs[1]);   // the OTHER input (b)
+                bwd_a->num_inputs = 1;
+                bwd_a->inputs[0] = dC_dA;
                 bwd_a->param_count = param_count;
                 build_backward(inode->inputs[0], bwd_a, param_count);
 
+                // dC/dB = A * dC
+                // CHECK if shapes match, otherwise dC = (dC/dB).sum(dim=0, keepdims=false)
                 auto bwd_b = gcopy_to_internal_node(inode->inputs[1]);
-                bwd_b->op = OpType::Mul;
+                auto A = copy_to_internal_node(inode->inputs[0], false, false, OpType::BwdHelper);
+                auto dC_dB = mul(A, dC);
+                if (dC_dB->h_meta->ndim != bwd_b->h_meta->ndim) bwd_b->op = OpType::Sum; // assuming that sum sees the out shape and like ah i get it
+                else bwd_b->op = OpType::Skip;
                 bwd_node->outputs[1] = bwd_b;
-                bwd_b->num_inputs = 2;
-                bwd_b->inputs[0] = bwd_node;
-                bwd_b->inputs[1] = copy_to_internal_node(inode->inputs[0]);   // the OTHER input (b)
-                
-                // cout<<"bwd_b->inputs: "<<bwd_b->inputs[0]->label<<" and "<<bwd_b->inputs[1]->label<<endl;
+                bwd_b->num_inputs = 1;
+                bwd_b->inputs[0] = dC_dB; // needs transpose
                 bwd_b->param_count = param_count;
                 build_backward(inode->inputs[1], bwd_b, param_count);
             }
@@ -81,7 +94,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 auto bwd_a = gcopy_to_internal_node(inode->inputs[0]);
                 auto B_T = copy_to_internal_node(inode->inputs[1], false, true, OpType::BwdHelper);
                 auto dC_dA = matmul(dC, B_T);
-                if (dC_dA->h_meta->shape() != bwd_a->h_meta->shape()) bwd_a->op = OpType::Sum;
+                if (dC_dA->h_meta->ndim != bwd_a->h_meta->ndim) bwd_a->op = OpType::Sum;
                 else bwd_a->op = OpType::Skip;
                 bwd_node->outputs[0] = bwd_a;
                 bwd_a->num_inputs = 1;
@@ -94,8 +107,8 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 auto bwd_b = gcopy_to_internal_node(inode->inputs[1]);
                 auto A_T = copy_to_internal_node(inode->inputs[0], false, true, OpType::BwdHelper);
                 auto dC_dB = matmul(A_T, dC);
-                if (dC_dB->h_meta->shape() != bwd_b->h_meta->shape()) bwd_b->op = OpType::Sum; // assuming that sum sees the out shape and like ah i get it
-                bwd_b->op = OpType::Skip;
+                if (dC_dB->h_meta->ndim != bwd_b->h_meta->ndim) bwd_b->op = OpType::Sum; // assuming that sum sees the out shape and like ah i get it
+                else bwd_b->op = OpType::Skip;
                 bwd_node->outputs[1] = bwd_b;
                 bwd_b->num_inputs = 1;
                 bwd_b->inputs[0] = dC_dB; // needs transpose

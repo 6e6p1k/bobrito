@@ -3,7 +3,6 @@
 #include <exception>
 #include "node.h"
 
-using namespace std;
 namespace utils 
 {
 
@@ -27,22 +26,29 @@ struct MatmulDims {
     int* res_shape;
 };
 
+struct ContiguousInfo {
+    int shape[MAX_DIMS];
+    int strides[MAX_DIMS];
+    int ndim;
+};
+
 namespace broadcast
 {
 BroadcastInfo elemwise(int* a_shape, int* b_shape, int* a_strides, int* b_strides, int* out_shape, int out_ndim);
 BroadcastInfo elemwise(InternalNode* node);
 MatmulDims matmul(int* a_shape, int* b_shape, int* res_shape, int ndim);
 MatmulDims matmul(InternalNode* node);
-
+ContiguousInfo contiguous(int* res_shape, int* input_strides, int ndim);
+ContiguousInfo contiguous(InternalNode* node);
 }
 
 
 namespace check_shape_return_out_shape 
 {
-pair<int*, int> elemwise(const int* a_shape, const int* b_shape, int a_size, int b_size);
-pair<int*, int> elemwise(shared_ptr<Node> A, shared_ptr<Node> B);
-pair<int*, int> reduction(const int* a_shape, const int ndim, const int dim, const bool keepdims);
-pair<int*, int> reduction(shared_ptr<Node> A, const int dim, const bool keepdims);
-pair<int*, int> matmul(int* a_shape, int* b_shape, int a_ndim, int b_ndim);
-pair<int*, int> matmul(shared_ptr<Node> A, shared_ptr<Node> B);
+std::pair<int*, int> elemwise(const int* a_shape, const int* b_shape, int a_size, int b_size);
+std::pair<int*, int> elemwise(std::shared_ptr<Node> A, std::shared_ptr<Node> B);
+std::pair<int*, int> reduction(const int* a_shape, const int ndim, const int dim, const bool keepdims);
+std::pair<int*, int> reduction(std::shared_ptr<Node> A, const int dim, const bool keepdims);
+std::pair<int*, int> matmul(int* a_shape, int* b_shape, int a_ndim, int b_ndim);
+std::pair<int*, int> matmul(std::shared_ptr<Node> A, std::shared_ptr<Node> B);
 }

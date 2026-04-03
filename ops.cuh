@@ -5,6 +5,8 @@
 
 namespace cu_ops
 {
+
+
 void add(InternalNode* res_node);
 void gadd(InternalNode* res_node);
 void mul(InternalNode* res_node);
@@ -13,5 +15,7 @@ void skip(InternalNode* res_node);
 void fill(Node* node, float val);
 void fill(SourceNode* node, float val);
 void fill(InternalNode* node, float val);
+void contiguous(InternalNode* res_node);
+void reduce_last_dim(InternalNode* res_node);
 // float* matmul_cuda_launch(const float* A, const float* B, int batch, int M, int N, int K);
 }

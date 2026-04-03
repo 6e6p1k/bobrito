@@ -10,7 +10,11 @@
 // <Block struct>
 OutStatus Block::allocate_block(void)
 {
-    if (cudaMalloc(&d_ptr, size) != cudaSuccess)
+    cudaError_t status;
+    if (kind==BlockKind::Data) status = cudaMalloc(&d_ptr, size);
+    else status = cudaMalloc(&meta_ptr, size);
+
+    if (status)
     {
         return OutStatus::Error;
     }
@@ -19,7 +23,11 @@ OutStatus Block::allocate_block(void)
 
 OutStatus Block::free_block(void)
 {
-    if (cudaFree(d_ptr) != cudaSuccess)
+    cudaError_t status;
+    if (kind==BlockKind::Data) status = cudaFree(d_ptr);
+    else status = cudaFree(meta_ptr);
+
+    if (status)
     {
         return OutStatus::Error;
     }
@@ -27,11 +35,9 @@ OutStatus Block::free_block(void)
 }
 // </Block struct>
 
-
 // <Grid struct>
-Grid* Grid::init(int max_blocks_num, int size_per_block)
+Grid* Grid::init(int max_blocks_num, int size_per_block, BlockKind kind)
 {
-    // size of the structure itself
     size_t total_bytes = sizeof(Grid) + sizeof(Block) * max_blocks_num;
 
     Grid* grid = (Grid*)malloc(total_bytes);
@@ -44,12 +50,14 @@ Grid* Grid::init(int max_blocks_num, int size_per_block)
         
         // init linked list of free blocks
         Block* raw = grid->blocks;
+        raw->kind = kind;
         // set every block but the last one
         for (int i = 0; i < max_blocks_num - 1; i++) {
             raw[i].next_free = &raw[i+1];
             raw[i].size = size_per_block;
             raw[i].allocate_block();
             raw[i].mom = grid;
+            raw[i].kind = kind;
         }
         // set the last one
         raw[max_blocks_num-1].next_free = nullptr;
@@ -60,30 +68,6 @@ Grid* Grid::init(int max_blocks_num, int size_per_block)
         grid->next_free_block = &raw[0];
     }
     return grid;
-}
-
-OutStatus Grid::find_free(Block** dst, size_t min_size)
-{
-    Block* prev = nullptr;
-    Block* curr = next_free_block;
-    
-    while (curr != nullptr)
-    {
-        if (curr->size >= min_size)
-        {
-            // unlink
-            if (prev == nullptr)
-                next_free_block = curr->next_free;  // was head
-            else
-                prev->next_free = curr->next_free;  // middle/tail
-            
-            *dst = curr;
-            return OutStatus::BlockFound;
-        }
-        prev = curr;
-        curr = curr->next_free;
-    }
-    return OutStatus::BlockNotFound;
 }
 
 OutStatus Grid::get_free(Block** dst)
@@ -140,25 +124,25 @@ MemoryPool& MemoryPool::call() {
     return instance;
 }
 
-void MemoryPool::free(Block* d_ptr)
+void MemoryPool::free(Block* b_ptr)
 {
-    d_ptr->mom->free_block(d_ptr);
+    b_ptr->mom->free_block(b_ptr);
 }
 
 // remove all allocations 
 OutStatus MemoryPool::reset(void) 
 {
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 5; ++i)
     {
         if (grids[i]->free_grid() != OutStatus::Success) return OutStatus::Error;
-        grids[i] = Grid::init(BLOCKS_PER_TIER[i], TIER_SIZES[i]);
+        grids[i] = Grid::init(BLOCKS_PER_TIER[i], TIER_SIZES[i], BLOCK_KIND[i]);
     }
     return OutStatus::Success;
 
 }
 
-void MemoryPool::allocate(Block** dst, size_t bytes) {
-    int tier = pick_grid_tier(bytes);
+void MemoryPool::allocate(Block** dst, size_t bytes, BlockKind kind) {
+    int tier = pick_grid_tier(bytes, kind);
     Grid* grid = grids[tier];
     while (grid != nullptr)
     {
@@ -171,31 +155,34 @@ void MemoryPool::allocate(Block** dst, size_t bytes) {
     }
 
     // not free grids -> make a new one
-    grid = make_connect_grid(tier);
+    grid = make_connect_grid(tier, kind);
     OutStatus status = grid->get_free(dst);    
 }
 
 // private constructor
 MemoryPool::MemoryPool() 
 {
-    grids[0] = Grid::init(256, TINY_BLOCK);
-    grids[1] = Grid::init(128, SMALL_BLOCK);
-    grids[2] = Grid::init(64,  MEDIUM_BLOCK);
-    grids[3] = Grid::init(32,  LARGE_BLOCK);
+    grids[0] = Grid::init(256, MICRO_BLOCK, BlockKind::MetaData); // micro block for metadata
+    grids[1] = Grid::init(256, TINY_BLOCK);
+    grids[2] = Grid::init(128, SMALL_BLOCK);
+    grids[3] = Grid::init(64,  MEDIUM_BLOCK);
+    grids[4] = Grid::init(32,  LARGE_BLOCK);
 } 
     
-int MemoryPool::pick_grid_tier(size_t bytes) 
+int MemoryPool::pick_grid_tier(size_t bytes, BlockKind kind) 
 {
-    if (bytes <= TINY_BLOCK)   return 0;
-    if (bytes <= SMALL_BLOCK)  return 1;
-    if (bytes <= MEDIUM_BLOCK) return 2;
-    return 3;
+    if (bytes <= MICRO_BLOCK && kind == BlockKind::MetaData)    
+        return 0; // solely for metadata 
+    if (bytes <= TINY_BLOCK)   return 1;
+    if (bytes <= SMALL_BLOCK)  return 2;
+    if (bytes <= MEDIUM_BLOCK) return 3;
+    return 4;
 }
 
-Grid* MemoryPool::make_connect_grid(int tier)
+Grid* MemoryPool::make_connect_grid(int tier, BlockKind kind)
 {
     // make grid
-    Grid* new_grid = Grid::init(BLOCKS_PER_TIER[tier], TIER_SIZES[tier]);
+    Grid* new_grid = Grid::init(BLOCKS_PER_TIER[tier], TIER_SIZES[tier], kind);
 
     // link new grid into the beginning
     Grid* tmp = grids[tier]->next_free_grid;
@@ -216,6 +203,7 @@ void ContentData::allocate_values(int size)
     if (!values_b_ptr)
     {
         MemoryPool::call().allocate(&values_b_ptr, size * sizeof(float));
+        _size = size;
     }
 }
 
@@ -223,8 +211,8 @@ void ContentData::allocate_values(void)
 {
     if (!values_b_ptr)
     {
-        if (!grad_b_ptr) throw logic_error("Grad was never allocated. unknown size.");
-        MemoryPool::call().allocate(&grad_b_ptr, size() * sizeof(float));
+        if (!grad_b_ptr) throw std::logic_error("Grad was never allocated. unknown size.");
+        MemoryPool::call().allocate(&values_b_ptr, size() * sizeof(float));
     }
     
 }
@@ -234,6 +222,7 @@ void ContentData::allocate_grad(int size)
     if (!grad_b_ptr)
     {
         MemoryPool::call().allocate(&grad_b_ptr, size * sizeof(float));
+        _size = size;
     }
 }
 
@@ -241,7 +230,7 @@ void ContentData::allocate_grad(void)
 {
     if (!grad_b_ptr)
     {
-        if (!values_b_ptr) throw logic_error("Values were never allocated. unknown size.");
+        if (!values_b_ptr) throw std::logic_error("Values were never allocated. unknown size.");
         MemoryPool::call().allocate(&grad_b_ptr, size() * sizeof(float));
     }
     
@@ -250,7 +239,7 @@ void ContentData::allocate_grad(void)
 void ContentData::allocate(int size)
 {
     allocate_values(size);
-    allocate_grad(size);
+    allocate_grad();
 }
 
 float* ContentData::values()
@@ -269,17 +258,14 @@ float* ContentData::grad()
 
 int ContentData::size()
 {   
-    if (!values_b_ptr && !grad_b_ptr) throw logic_error("Nothing was allocated yet. nowhere to get size.");
-    if (values_b_ptr || values_b_ptr->size) return values_b_ptr->size / sizeof(float);
-    if (grad_b_ptr || grad_b_ptr->size) return grad_b_ptr->size / sizeof(float);
-    throw logic_error("Something is very very very wrong! Beer = liquid dopamine!");
+    if (!_size) throw std::logic_error("Nothing was allocated yet. nowhere to get size.");
+    else return _size;
 }
 
 size_t ContentData::bytes()
 {
     // Returns size of grad / values in bytes.
-    check_values();
-    return values_b_ptr->size;
+    return size() * sizeof(float);
 }
 
 float* ContentData::d_values_to_h()
@@ -320,41 +306,21 @@ void ContentData::h_grad_to_d(float* h_data, int size)
 
 void ContentData::check_values(void)
 {
-    if (!values_b_ptr) throw logic_error("Values were never allocated.");
-    if (!(values_b_ptr->d_ptr)) throw logic_error("Values is empty.");
-    if (!(values_b_ptr->size)) throw logic_error("Size is not specified.");
+    if (!values_b_ptr) throw std::logic_error("Values were never allocated.");
+    if (!(values_b_ptr->d_ptr)) throw std::logic_error("Values is empty.");
+    if (!(values_b_ptr->size)) throw std::logic_error("Size is not specified.");
 }
 
 void ContentData::check_grad(void)
 {
-    if (!grad_b_ptr) throw logic_error("Grad was never allocated.");
-    if (!(grad_b_ptr->d_ptr)) throw logic_error("Grad is empty.");
+    if (!grad_b_ptr) throw std::logic_error("Grad was never allocated.");
+    if (!(grad_b_ptr->d_ptr)) throw std::logic_error("Grad is empty.");
+}
+
+bool ContentData::is_grad(void)
+{
+    if (!grad_b_ptr) return false;
+    if (!(grad_b_ptr->d_ptr)) return false;
+    return true;
 }
 // </ContentData>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

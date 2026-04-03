@@ -76,6 +76,27 @@ MatmulDims matmul(InternalNode* node) {
 
     return matmul(a_shape, b_shape, out_shape, out_ndim);
 }
+
+ContiguousInfo contiguous(int* res_shape, int* input_strides, int ndim)
+{
+    ContiguousInfo info;
+    for (int i = 0; i < ndim; ++i)
+    {
+        info.shape[i] = res_shape[i];
+        info.strides[i] = input_strides[i];
+    }
+    info.ndim = ndim;
+
+    return info;
+}
+
+ContiguousInfo contiguous(InternalNode* node)
+{
+    int* res_shape = node->h_meta->shape();
+    int* input_strides = node->inputs[0]->h_meta->strides();
+    int ndim = node->h_meta->ndim;
+    return contiguous(res_shape, input_strides, ndim);
+}
 }
 
 namespace check_shape_return_out_shape 
@@ -159,8 +180,6 @@ pair<int*, int> matmul(shared_ptr<Node> A, shared_ptr<Node> B) {
     int b_ndim = B->h_meta->ndim;
     int* a_shape;
     int* b_shape;
-
-    
 
     // handle tranposed
     if (A->transposed) {

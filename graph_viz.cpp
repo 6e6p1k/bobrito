@@ -41,6 +41,7 @@ static const char* op_symbol(OpType op) {
         case OpType::Skip:          return "→";
         case OpType::BwdStart:      return "▲";
         case OpType::BwdHelper:     return "↺";
+        case OpType::Contiguous:    return "~";
     }
     return "?";
 }
@@ -57,6 +58,7 @@ static const char* op_name(OpType op) {
         case OpType::Skip:          return "Skip";
         case OpType::BwdStart:      return "BwdStart";
         case OpType::BwdHelper:     return "BwdHelper";
+        case OpType::Contiguous:    return "Contiguous";
     }
     return "??";
 }
