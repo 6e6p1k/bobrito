@@ -87,7 +87,7 @@ struct ContentData
 {
     Block* values_b_ptr = nullptr;
     Block* grad_b_ptr = nullptr;
-    int _size;
+    int _size = -1;
 
     float* values();
     float* grad();
@@ -103,6 +103,7 @@ struct ContentData
     void h_values_to_d(float* h_data, int size);
     void h_grad_to_d(float* h_data, int size);
     bool is_grad(void);
+    bool is_values(void);
 
     ~ContentData()
     {

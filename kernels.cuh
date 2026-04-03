@@ -41,6 +41,7 @@ __global__ void fill(float* data, float val, int n);
 __global__ void copy(float* src, float* dst, int n);
 __global__ void contiguous(float* src, float* dst, int size, ContiguousInfo info);
 __global__ void reduction_offsets(int* offsets, int last_dim, int num_segments);
+__global__ void expand_last_dim(float* src, float* dst, int last_dim, int n);
 
 }
 

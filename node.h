@@ -1,11 +1,13 @@
 #pragma once
+#include <cstddef>
 #include <memory>
 #include <unordered_set>
 #include <vector>
+#include <string>
 
 #include "allocator.cuh"
 
-enum class OpType { Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip, Contiguous, Reshape, BwdStart, BwdHelper};
+enum class OpType {null, Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip, Contiguous, Reshape, ExpandLD, BwdStart, BwdHelper};
 std::ostream& operator<<(std::ostream& os, const OpType& op);
 std::string opToString(const OpType& op);
 
@@ -60,8 +62,28 @@ struct InternalNode : Node
     int num_inputs;
 };
 
+struct InodeConfig {
+    // general info
+    OpType op = OpType::null;
+    std::string label = "";
+
+    // ShapeData
+    int* shape = nullptr;
+    int* strides = nullptr;
+    int ndim;
+
+    // linking
+    std::shared_ptr<Node>* inputs = nullptr;
+    int num_inputs;
+    int param_count;
+
+    // to transform data existing node
+    std::shared_ptr<Node> dst = nullptr;
+};
+
 std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides = nullptr, int param_count = 0);
 std::shared_ptr<InternalNode> make_internal_node_like(InternalNode* example);
+std::shared_ptr<InternalNode> make_internal_node(InodeConfig);
 std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int param_count);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
@@ -74,19 +96,21 @@ void print_node(Node* node);
 // <nodes interaction>
 
 //      <general operations>
-std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b, OpType op);
-std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, bool keepdims);
+std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b, OpType op, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, bool keepdims, std::shared_ptr<Node> dst = nullptr);
 //      </general operations>
 
 std::shared_ptr<Node> add(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
 std::shared_ptr<Node> mul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
-std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims = false);
 std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims = false);
 std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims = false);
-std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
-std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a);
+std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> skip(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
 std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_ndim);
-std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a);
+std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims = false);
+std::shared_ptr<Node> expand_last_dim(std::shared_ptr<Node> a, int* desired_shape, int ndim, std::shared_ptr<Node> dst = nullptr);
 // </nodes interaction>
 
 // <Topological sort>
@@ -96,6 +120,7 @@ std::vector<Node*> topo_sort(std::shared_ptr<InternalNode> node, bool grad);
 std::vector<Node*> topo_sort(std::shared_ptr<Node> node, bool grad);
 // </Topological sort>
 
+void op_based_eval(InternalNode* inode);
 void eval(std::shared_ptr<InternalNode> root);
 void eval(std::shared_ptr<Node> root);
 void geval(std::shared_ptr<InternalNode> root);

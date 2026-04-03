@@ -67,42 +67,93 @@ void mul(InternalNode* res_node)
 // void matmul(InternalNode* res_node) {}
 void matmul(InternalNode* res_node) 
 {
-    MatmulDims dims = broadcast::matmul(res_node);
-    
-    // created once, reused for every call
     static cublasHandle_t handle = [](){
         cublasHandle_t h;
         cublasCreate(&h);
         cublasSetMathMode(h, CUBLAS_DEFAULT_MATH);
-
-        // allocate 32MB workspace (check later)
-        // void* workspace;
-        // cudaMalloc(&workspace, 32 * 1024 * 1024);
-        // cublasSetWorkspace(h, workspace, 32 * 1024 * 1024);
-
         return h;
     }();
 
-    float* res_data = res_node->get_values();
     float* a_data = res_node->inputs[0]->get_values();
     float* b_data = res_node->inputs[1]->get_values();
+    float* res_data = res_node->get_values();
     float alpha = 1.0f, beta = 0.0f;
 
-    bool a_transposed = res_node->inputs[0]->transposed;
-    bool b_transposed = res_node->inputs[1]->transposed;
-    cublasOperation_t a_cublas_op = a_transposed ? CUBLAS_OP_T : CUBLAS_OP_N;
-    cublasOperation_t b_cublas_op = b_transposed ? CUBLAS_OP_T : CUBLAS_OP_N;
+    bool a_t = res_node->inputs[0]->transposed;
+    bool b_t = res_node->inputs[1]->transposed;
 
+    int a_ndim = res_node->inputs[0]->h_meta->ndim;
+    int b_ndim = res_node->inputs[1]->h_meta->ndim;
+    int* a_shape = res_node->inputs[0]->h_meta->shape();
+    int* b_shape = res_node->inputs[1]->h_meta->shape();
 
+    // Physical storage: A is [a_rows, a_cols], B is [b_rows, b_cols]
+    int a_rows = a_shape[a_ndim - 2];
+    int a_cols = a_shape[a_ndim - 1];
+    int b_rows = b_shape[b_ndim - 2];
+    int b_cols = b_shape[b_ndim - 1];
+
+    // Logical matmul: C = op(A) @ op(B)
+    //   op(A) is [M, K], op(B) is [K, N], C is [M, N]
+    int M = a_t ? a_cols : a_rows;
+    int K = a_t ? a_rows : a_cols;
+    int N = b_t ? b_rows : b_cols;
+
+    // Batch
+    int a_batch = 1, b_batch = 1;
+    for (int i = 0; i < a_ndim - 2; i++) a_batch *= a_shape[i];
+    for (int i = 0; i < b_ndim - 2; i++) b_batch *= b_shape[i];
+    int batch = std::max(a_batch, b_batch);
+
+    // Row-major trick: to get C = A @ B in row-major,
+    // tell cuBLAS (column-major) to compute C^T = B^T @ A^T.
+    //
+    // A row-major [r, c] matrix in memory IS a column-major [c, r] matrix.
+    // So cuBLAS sees:
+    //   physical A as col-major [a_cols, a_rows]  (already transposed vs logical)
+    //   physical B as col-major [b_cols, b_rows]  (already transposed vs logical)
+    //
+    // We want cuBLAS to compute: C^T = op'(B) @ op'(A)
+    //
+    // For B (cuBLAS's first matrix):
+    //   cuBLAS sees physical B as col-major [b_cols, b_rows].
+    //   We need logical B^T for the row-major trick.
+    //   If b_t == false: logical B is [b_rows, b_cols], we need B^T = [b_cols, b_rows].
+    //     cuBLAS already sees [b_cols, b_rows] → OP_N
+    //   If b_t == true: logical B is [b_cols, b_rows], we need B^T = [b_rows, b_cols].
+    //     cuBLAS sees [b_cols, b_rows], needs [b_rows, b_cols] → OP_T
+    //
+    // Same logic for A (cuBLAS's second matrix):
+    //   If a_t == false: OP_N
+    //   If a_t == true:  OP_T
+
+    cublasOperation_t op_cublas_B = b_t ? CUBLAS_OP_T : CUBLAS_OP_N;
+    cublasOperation_t op_cublas_A = a_t ? CUBLAS_OP_T : CUBLAS_OP_N;
+
+    // Leading dimensions: always the number of columns in physical row-major storage.
+    // This equals the number of rows in cuBLAS's column-major view.
+    int ld_b = b_cols;
+    int ld_a = a_cols;
+    int ld_c = N;  // output is [M, N] in row-major, so ld = N
+
+    int a_stride = a_rows * a_cols;
+    int b_stride = b_rows * b_cols;
+    int c_stride = M * N;
+
+    if (b_ndim < a_ndim) b_stride = 0;
+    if (a_ndim < b_ndim) a_stride = 0;
+
+    // cuBLAS: C^T(N x M) = op'(B)(N x K) @ op'(A)(K x M)
+    //   m = N, n = M, k = K
     cublasGemmStridedBatchedEx(handle,
-        b_cublas_op, a_cublas_op,
-        dims.N, dims.M, dims.K,
+        op_cublas_B, op_cublas_A,
+        N, M, K,
         &alpha,
-        b_data, CUDA_R_32F, dims.N, dims.K * dims.N,
-        a_data, CUDA_R_32F, dims.K, dims.M * dims.K,
+        b_data, CUDA_R_32F, ld_b, b_stride,
+        a_data, CUDA_R_32F, ld_a, a_stride,
         &beta,
-        res_data, CUDA_R_32F, dims.N, dims.M * dims.N,
-        dims.batch,
+        res_data, CUDA_R_32F, ld_c, c_stride,
+        batch,
         CUBLAS_COMPUTE_32F,
         CUBLAS_GEMM_DEFAULT_TENSOR_OP
     );
@@ -110,11 +161,12 @@ void matmul(InternalNode* res_node)
 
 //  float* src, float* dst, int* shape, int ndim, int n)
 void reduce_last_dim(InternalNode* res_node) {
-    float* res_data = res_node->d_content->values();
-    float* input_data = res_node->inputs[0]->d_content->values();
+    float* res_data = res_node->get_values();
+    float* input_data = res_node->inputs[0]->get_values();
     int* shape = res_node->inputs[0]->h_meta->shape();
     int ndim = res_node->inputs[0]->h_meta->ndim;
-    int size = res_node->inputs[0]->d_content->size();
+    int size = utils::numel(ndim, shape);
+    std::cout<<"size = "<<size<<"\n";
     
     int last_dim = shape[ndim - 1];
     int num_segments = size / last_dim;
@@ -182,7 +234,7 @@ void fill(Node* node, float val)
 
 void fill(SourceNode* node, float val)
 {
-    float* data = node->d_content->values();
+    float* data = node->get_values();
     int size = node->d_content->size();
 
     int gridDim = (size + 255) / 256;
@@ -193,7 +245,7 @@ void fill(SourceNode* node, float val)
 
 void fill(InternalNode* node, float val)
 {
-    float* data = node->d_content->values();
+    float* data = node->get_values();
     int size = node->d_content->size();
 
     int gridDim = (size + 255) / 256;
@@ -208,11 +260,26 @@ void contiguous(InternalNode* res_node)
     float* res_data = res_node->get_values();
     float* data = res_node->inputs[0]->get_values();
     int size = res_node->d_content->size();
-    
+
     int gridDim = (size + 255) / 256;
     int blockDim = 256;
 
     kernels::contiguous<<<gridDim, blockDim>>>(data, res_data, size, info);
+    cudaDeviceSynchronize();
+}
+
+void expand_last_dim(InternalNode* res_node)
+{
+    float* res_data = res_node->get_values();
+    float* data = res_node->inputs[0]->get_values();
+    int res_ndim = res_node->h_meta->ndim;
+    int last_dim = res_node->h_meta->shape()[res_ndim];
+    int size = res_node->d_content->size();
+
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+
+    kernels::expand_last_dim<<<gridDim, blockDim>>>(data, res_data, last_dim, size);
     cudaDeviceSynchronize();
 }
 }

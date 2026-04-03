@@ -258,7 +258,7 @@ float* ContentData::grad()
 
 int ContentData::size()
 {   
-    if (!_size) throw std::logic_error("Nothing was allocated yet. nowhere to get size.");
+    if (_size == -1) throw std::logic_error("Nothing was allocated yet. nowhere to get size.");
     else return _size;
 }
 
@@ -321,6 +321,13 @@ bool ContentData::is_grad(void)
 {
     if (!grad_b_ptr) return false;
     if (!(grad_b_ptr->d_ptr)) return false;
+    return true;
+}
+
+bool ContentData::is_values(void)
+{
+    if (!values_b_ptr) return false;
+    if (!(values_b_ptr->d_ptr)) return false;
     return true;
 }
 // </ContentData>

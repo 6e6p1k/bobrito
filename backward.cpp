@@ -21,7 +21,6 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
     }
 
     shared_ptr<InternalNode> inode = dynamic_pointer_cast<InternalNode>(fwd_node);
-    param_count--;
     if (param_count < 0) return;
     
     switch (inode->op) {
@@ -87,39 +86,75 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 // B = innode->inputs[1]
                 // C = inode    (dC = gradient of C, which is in bwd_node)
                 // C = A @ B
-                auto dC = bwd_node;
+                shared_ptr<Node> dC = bwd_node;
+                dC->label = "dC";
 
                 // dC/dA = dC @ B_T
+                shared_ptr<Node> B_T = copy_to_internal_node(inode->inputs[1], false, true, OpType::BwdHelper);
+                shared_ptr<Node> dC_dA = matmul(dC, B_T);
+                shared_ptr<InternalNode> bwd_a;
+                B_T->label = "B_T";
+                dC_dA->label = "dC_dA";
+
                 // CHECK if shapes match, otherwise out = (dC/dA).sum(dim=0, keepdims=false)
-                auto bwd_a = gcopy_to_internal_node(inode->inputs[0]);
-                auto B_T = copy_to_internal_node(inode->inputs[1], false, true, OpType::BwdHelper);
-                auto dC_dA = matmul(dC, B_T);
-                if (dC_dA->h_meta->ndim != bwd_a->h_meta->ndim) bwd_a->op = OpType::Sum;
-                else bwd_a->op = OpType::Skip;
-                bwd_node->outputs[0] = bwd_a;
-                bwd_a->num_inputs = 1;
-                bwd_a->inputs[0] = dC_dA;
-                bwd_a->param_count = param_count;
+                if (dC_dA->h_meta->ndim == inode->inputs[0]->h_meta->ndim) {
+                    bwd_a = static_pointer_cast<InternalNode>(dC_dA);
+                    bwd_a->d_content = inode->inputs[0]->d_content;
+                } else {
+                    shared_ptr<Node> node = sum(dC_dA, 0, false);
+                    bwd_a = static_pointer_cast<InternalNode>(node);
+                    bwd_a->d_content = inode->inputs[0]->d_content;
+                }
+                bwd_a->label = inode->inputs[0]->label + "_grad";
                 build_backward(inode->inputs[0], bwd_a, param_count);
 
+
                 // dC/dB = A_T @ dC
+                shared_ptr<Node> A_T = copy_to_internal_node(inode->inputs[0], false, true, OpType::BwdHelper);
+                shared_ptr<Node> dC_dB = matmul(A_T, dC);
+                shared_ptr<InternalNode> bwd_b;
+                A_T->label = "A_T";
+                dC_dB->label = "dC_dB";
+
                 // CHECK if shapes match, otherwise dC = (dC/dB).sum(dim=0, keepdims=false)
-                auto bwd_b = gcopy_to_internal_node(inode->inputs[1]);
-                auto A_T = copy_to_internal_node(inode->inputs[0], false, true, OpType::BwdHelper);
-                auto dC_dB = matmul(A_T, dC);
-                if (dC_dB->h_meta->ndim != bwd_b->h_meta->ndim) bwd_b->op = OpType::Sum; // assuming that sum sees the out shape and like ah i get it
-                else bwd_b->op = OpType::Skip;
-                bwd_node->outputs[1] = bwd_b;
-                bwd_b->num_inputs = 1;
-                bwd_b->inputs[0] = dC_dB; // needs transpose
-                bwd_b->param_count = param_count;
+                if (dC_dB->h_meta->ndim == inode->inputs[1]->h_meta->ndim) {
+                    bwd_b = static_pointer_cast<InternalNode>(dC_dB);
+                    bwd_b->d_content = inode->inputs[1]->d_content;
+                } else { 
+                    shared_ptr<Node> node = sum(dC_dB, 0, false);
+                    bwd_b = static_pointer_cast<InternalNode>(node);
+                    bwd_b->d_content = inode->inputs[1]->d_content;
+                }
+                bwd_b->label = inode->inputs[1]->label + "_grad";
                 build_backward(inode->inputs[1], bwd_b, param_count);
             }
             break;
 
         case OpType::Sum:
+            {
+                shared_ptr<Node> node = expand_last_dim(bwd_node, inode->inputs[0]->h_meta->shape(), inode->inputs[0]->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(node);
+                build_backward(inode->inputs[0], bwd_a, param_count);
+            }
             break;
-            
+
+        case OpType::Reshape:
+            {
+                cout<<"HUUUUUY!"<<endl;
+                shared_ptr<Node> node = reshape(bwd_node, inode->inputs[0]->h_meta->shape(), inode->inputs[0]->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(node);
+                build_backward(inode->inputs[0], bwd_a, param_count);
+            }
+            break;
+        case OpType::Contiguous:
+            {
+                cout<<"HUUUUUY!"<<endl;
+                shared_ptr<Node> node = contiguous(bwd_node);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(node);
+                // cout<<"bwd_a->inputs[0]->label in build_backward contiguous: "<<bwd_a->outputs[0]->label<<endl;
+                build_backward(inode->inputs[0], bwd_a, param_count);
+            }
+            break;
         default:
             break;
     }
@@ -128,10 +163,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
 void _backward(shared_ptr<Node> node)
 {
     // post_order_dfs(i4.get(), visited, order);
-    if (node->kind == NodeKind::Source) 
-    {
-        throw logic_error("Cannot use .backward() on this tensor.");
-    }
+    if (node->kind == NodeKind::Source) throw logic_error("Cannot use .backward() on this tensor.");
     shared_ptr<InternalNode> bwd_node = copy_to_internal_node(node);
     node->outputs[0] = bwd_node;
     bwd_node->num_inputs = 1;

@@ -42,6 +42,8 @@ static const char* op_symbol(OpType op) {
         case OpType::BwdStart:      return "▲";
         case OpType::BwdHelper:     return "↺";
         case OpType::Contiguous:    return "~";
+        case OpType::Reshape:       return ">";
+        case OpType::ExpandLD:      return "$";
     }
     return "?";
 }
@@ -59,6 +61,8 @@ static const char* op_name(OpType op) {
         case OpType::BwdStart:      return "BwdStart";
         case OpType::BwdHelper:     return "BwdHelper";
         case OpType::Contiguous:    return "Contiguous";
+        case OpType::Reshape:       return "Reshape";
+        case OpType::ExpandLD:      return "ExpandLD";
     }
     return "??";
 }

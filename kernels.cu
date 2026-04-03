@@ -40,4 +40,9 @@ __global__ void reduction_offsets(int* offsets, int last_dim, int num_segments) 
     if (i <= num_segments) offsets[i] = i * last_dim;
 }
 
+__global__ void expand_last_dim(float* src, float* dst, int last_dim, int n) {
+    int out_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (out_idx >= n) return;
+    dst[out_idx] = src[out_idx / last_dim];
+}
 }

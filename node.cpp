@@ -1,8 +1,10 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdlib>
+#include <endian.h>
 #include <iostream>
 #include <memory>
+#include <ostream>
 #include <stdexcept>
 #include <unordered_set>
 #include <vector>
@@ -28,6 +30,7 @@ ostream& operator<<(std::ostream& os, const OpType& op)
         case OpType::Skip:              return os << ".skip()";
         case OpType::Contiguous:        return os << "~";
         case OpType::Reshape:           return os << "RR";
+        case OpType::ExpandLD:          return os << "[ ]";
         default:                        return os << "Unknown";
     }
 }
@@ -39,11 +42,12 @@ string opToString(const OpType& op)
         case OpType::Mul:           return "*";
         case OpType::Sum:           return ".sum()";
         case OpType::Min:           return ".min()";
-        case OpType::Max:           return ".max()";
+        case OpType::Max:           return ".maxld()";
         case OpType::MatMul:        return "@";
         case OpType::Skip:          return ".skip()";
         case OpType::Contiguous:    return ".contiguous()";
         case OpType::Reshape:       return ".reshape()";
+        case OpType::ExpandLD:      return ".expandld()";
         default:                    return "Unknown";
     }
 }
@@ -125,6 +129,34 @@ std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node
         // cout<<"Node ["<<inputs[i]->label<<"] has "<<inputs[i]->param_count<<" labels"<<endl;
         if (inputs[i]->outputs[0] == nullptr) inputs[i]->outputs[0] = node;
         else inputs[i]->outputs[1] = node;
+    }
+    return node;
+}
+
+std::shared_ptr<InternalNode> make_internal_node(InodeConfig cfg)
+{
+    if (cfg.op == OpType::null || !cfg.shape || !cfg.ndim || !cfg.inputs || !cfg.num_inputs)
+        throw logic_error("Not enough data specified.");
+    
+    std::shared_ptr<InternalNode> node = std::make_shared<InternalNode>();
+    node->kind = NodeKind::Internal;
+    node->op = cfg.op;
+    node->num_inputs = cfg.num_inputs;
+    node->h_meta = make_shape_data(cfg.ndim, cfg.shape, cfg.strides);
+    for (int i = 0; i < cfg.num_inputs; i++)
+    {
+        node->inputs[i] = cfg.inputs[i];
+        node->param_count += cfg.inputs[i]->param_count;
+        if (cfg.inputs[i]->outputs[0] == nullptr) cfg.inputs[i]->outputs[0] = node;
+        else cfg.inputs[i]->outputs[1] = node;
+    }
+    if (cfg.param_count) node->param_count = cfg.param_count;
+    if (cfg.label != "") node->label = cfg.label;
+    if (!cfg.dst) node->d_content = make_shared<ContentData>();
+    else 
+    {
+        node->d_content = cfg.dst->d_content;
+        cfg.dst->h_meta = node->h_meta;
     }
     return node;
 }
@@ -242,62 +274,78 @@ void print_node(Node* node)
     int limit = total > 20 ? 20 : total;
 
     // handle values
-    if (!node->d_content || !node->d_content->values()) return;
-    float* h_data = node->d_content->d_values_to_h();
-
-    cout<<"Data: [";
-    for (int i = 0; i < limit; ++i)
+    if (!node->d_content->is_values()) { cout<<"No values allocated yet."<<endl; }
+    else 
     {
-        if (i > 0) cout<<", ";
-        cout<<h_data[i];
-    }
-    if (total > limit) cout<<", ... ("<<total<<" total)";
-    cout<<"]"<<endl;
+        float* h_data = node->d_content->d_values_to_h();
 
-    delete[] h_data;
+        cout<<"Data: [";
+        for (int i = 0; i < limit; ++i)
+        {
+            if (i > 0) cout<<", ";
+            cout<<h_data[i];
+        }
+        if (total > limit) cout<<", ... ("<<total<<" total)";
+        cout<<"]"<<endl;
+
+        delete[] h_data;
+    }
 
     // handle grad
-    if (!node->d_content->is_grad()) { cout<<"No grad computed yet."<<endl; return; }
-    float* h_grad = node->d_content->d_grad_to_h();
-
-    cout<<"Grad: [";
-    for (int i = 0; i < limit; ++i)
+    if (!node->d_content->is_grad()) { cout<<"No grad allocated yet."<<endl; }
+    else 
     {
-        if (i > 0) cout<<", ";
-        cout<<h_grad[i];
-    }
-    if (total > limit) cout<<", ... ("<<total<<" total)";
-    cout<<"]"<<endl;
+        float* h_grad = node->d_content->d_grad_to_h();
 
-    delete[] h_grad;
+        cout<<"Grad: [";
+        for (int i = 0; i < limit; ++i)
+        {
+            if (i > 0) cout<<", ";
+            cout<<h_grad[i];
+        }
+        if (total > limit) cout<<", ... ("<<total<<" total)";
+        cout<<"]"<<endl;
+
+        delete[] h_grad;
+    }
 }
 // </Node>
 // <nodes interaction>
 //      <general operations>
-std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b, OpType op)
+std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b, OpType op, std::shared_ptr<Node> dst)
 {
     auto [res_shape, res_ndim] = check_shape_return_out_shape::elemwise(
         a, b
     );
     std::shared_ptr<Node> inputs[] = {a, b};
-    auto node = make_internal_node(
-        op, inputs, 2, res_shape, res_ndim
-    );
+    auto node = make_internal_node({
+        .op = op,
+        .shape = res_shape,
+        .ndim = res_ndim,
+        .inputs = inputs,
+        .num_inputs = 2,
+        .dst = dst
+    });
     // <remove later>
-    node->label = "( " + a->label + " " + opToString(op) + " " + b->label + " )"; 
+    node->label = "( " + a->label + " " + opToString(op) + " " + b->label + " )";
     // </remove later>
     return node;
 }
 
-std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, bool keepdims)
+std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, bool keepdims, std::shared_ptr<Node> dst)
 {
     auto [res_shape, res_ndim] = check_shape_return_out_shape::reduction(
         a, dim, keepdims
     );
     std::shared_ptr<Node> inputs[] = {a};
-    auto node = make_internal_node(
-        op, inputs, 1, res_shape, res_ndim
-    );
+    auto node = make_internal_node({
+        .op = op,
+        .shape = res_shape,
+        .ndim = res_ndim,
+        .inputs = inputs,
+        .num_inputs = 1,
+        .dst = dst
+    });
     node->label = a->label + opToString(op); // remove later
     return node;
 }
@@ -308,33 +356,49 @@ std::shared_ptr<Node> add(std::shared_ptr<Node> a, std::shared_ptr<Node> b) { re
 std::shared_ptr<Node> mul(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b) { return elemwise(a, b, OpType::Mul); }
 std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims) { return reduction(a, dim, OpType::Max, keepdims); }
 std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims) { return reduction(a, dim, OpType::Min, keepdims); }
-std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b)
+std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b, std::shared_ptr<Node> dst)
 {
     auto [res_shape, res_ndim] = check_shape_return_out_shape::matmul(a, b);
     std::shared_ptr<Node> inputs[] = {a, b};
-    auto node = make_internal_node(
-        OpType::MatMul, inputs, 2, res_shape, res_ndim
-    );
+    auto node = make_internal_node({
+        .op = OpType::MatMul,
+        .shape = res_shape,
+        .ndim = res_ndim,
+        .inputs = inputs,
+        .num_inputs = 2,
+        .dst = dst
+    });
     node->label = "(" + a->label + " " + opToString(OpType::MatMul) + " " + b->label + ")"; // remove later
     return node;
 }
-std::shared_ptr<Node> skip(std::shared_ptr<Node> a)
+std::shared_ptr<Node> skip(std::shared_ptr<Node> a, std::shared_ptr<Node> dst)
 {
     std::shared_ptr<Node> inputs[] = {a};
-    auto node = make_internal_node(
-        OpType::Skip, inputs, 1, a->h_meta->shape(), a->h_meta->ndim
-    );
+    auto node = make_internal_node({
+        .op = OpType::Skip,
+        .shape = a->h_meta->shape(),
+        .ndim = a->h_meta->ndim,
+        .inputs = inputs,
+        .num_inputs = 1,
+        .dst = dst
+    });
     return node;
 }
-std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a)
+std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a, std::shared_ptr<Node> dst)
 {
     std::shared_ptr<Node> inputs[] = {a};
     int* res_strides = new int[a->h_meta->ndim];
     utils::compute_strides(res_strides, a->h_meta->ndim, a->h_meta->shape());
-    auto node = make_internal_node(
-        OpType::Contiguous, inputs, 1, a->h_meta->shape(), a->h_meta->ndim, res_strides
-    );
-    node->label= "contiguous(" + a->label + ")";
+    auto node = make_internal_node({
+        .op = OpType::Contiguous,
+        .shape = a->h_meta->shape(),
+        .strides = res_strides,
+        .ndim = a->h_meta->ndim,
+        .inputs = inputs,
+        .num_inputs = 1,
+        .dst = dst
+    });
+    node->label = "contiguous(" + a->label + ")";
     return node;
 }
 std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_ndim)
@@ -368,16 +432,21 @@ std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_n
     return node;
 }
 
-std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a)
+std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a, std::shared_ptr<Node> dst)
 {
     int res_ndim = a->h_meta->ndim - 1;
     int res_shape[res_ndim];
     for (int i = 0; i < res_ndim; ++i) res_shape[i] = a->h_meta->shape()[i];
     std::shared_ptr<Node> inputs[] = {a};
     cout<<"NDIM="<<res_ndim<<endl;
-    auto node = make_internal_node(
-        OpType::Sum, inputs, 1, res_shape, res_ndim
-    );
+    auto node = make_internal_node({
+        .op = OpType::Sum,
+        .shape = res_shape,
+        .ndim = res_ndim,
+        .inputs = inputs,
+        .num_inputs = 1,
+        .dst = dst
+    });
     node->label = "sum_last_dim(" + a->label + ")";
     return node;
 }
@@ -386,16 +455,23 @@ std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims)
 {
     // handle negative indexing
     int ndim = a->h_meta->ndim;
-    dim = (dim + ndim) % ndim;;
-    
+    dim = (dim + ndim) % ndim;
+    if (dim > ndim - 1) throw logic_error("Dim wasn't found.");
+    // if (dim == 52)
+    // {
+    //     flatten
+    // }
+
     if (dim == ndim - 1 && !keepdims) return sum_last_dim(a);
-    
-    int* shape_copy = new int[ndim];
-    memcpy(shape_copy, a->h_meta->shape(), ndim * sizeof(int));
 
     // 1. reshape, put the dim to the end
-    shape_copy[ndim - 1] = a->h_meta->shape()[dim];
-    shape_copy[dim] = a->h_meta->shape()[ndim - 1];
+    int* shape_copy = new int[ndim];
+    int val = a->h_meta->shape()[dim];
+    int j = 0;
+    for (int i = 0; i < ndim; ++i)
+        if (i != dim) shape_copy[j++] = a->h_meta->shape()[i];
+    shape_copy[ndim-1] = val;
+
     std::shared_ptr<Node> reshaped_node = reshape(a, shape_copy, ndim); 
 
     // 2. make contiguous
@@ -414,6 +490,29 @@ std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims)
         return node;
     }
     return node_after_sum;
+}
+
+std::shared_ptr<Node> expand_last_dim(std::shared_ptr<Node> a, int* res_shape, int res_ndim, std::shared_ptr<Node> dst)
+{
+    // quick check
+    bool same_ndim_case = (a->h_meta->ndim == res_ndim) && (a->h_meta->shape()[res_ndim - 1] == 1);
+    bool different_ndim_case = (a->h_meta->ndim == res_ndim - 1);
+    if (!(same_ndim_case || different_ndim_case)) throw std::logic_error("Cannot broadcast this.");
+    for (int i = 0; i < res_ndim - 1; ++i)
+        if (a->h_meta->shape()[i] != res_shape[i])
+            throw std::logic_error("Cannot broadcast this.");
+
+    std::shared_ptr<Node> inputs[] = {a};
+    auto node = make_internal_node({
+        .op = OpType::ExpandLD,
+        .shape = res_shape,
+        .ndim = res_ndim,
+        .inputs = inputs,
+        .num_inputs = 1,
+        .dst = dst
+    });
+    node->label = "expand_last_dim(" + a->label + ")";
+    return node;
 }
 //      </ops>
 // </nodes interaction>
@@ -511,19 +610,9 @@ void eval(std::shared_ptr<InternalNode> root)
         int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
         inode->d_content->allocate_values(size);
         // if (inode->d_content->values()) cout<<"values are allocated"<<endl;
-        
+
         // dispatch
-        switch (inode->op)
-        {
-            case OpType::Add:
-                cu_ops::add(inode);
-                break;
-            case OpType::Mul:
-                cu_ops::mul(inode);
-                break;
-            default:
-                break;
-        }
+        op_based_eval(inode);
     }
 }
 
@@ -546,26 +635,7 @@ void eval(std::shared_ptr<Node> root)
         // if (inode->d_content->values()) cout<<"values are allocated"<<endl;
         
         // dispatch
-        switch (inode->op)
-        {
-            case OpType::Add:
-                cu_ops::add(inode);
-                break;
-            case OpType::Mul:
-                cu_ops::mul(inode);
-                break;
-            case OpType::MatMul:
-                cu_ops::matmul(inode);
-                break;
-            case OpType::Contiguous:
-                cu_ops::contiguous(inode);
-                break;
-            case OpType::Sum:
-                cu_ops::reduce_last_dim(inode);
-                break;
-            default:
-                break;
-        }
+        op_based_eval(inode);
     }
 }
 
@@ -594,17 +664,7 @@ void geval(std::shared_ptr<InternalNode> root)
         if (inode->d_content->values()) cout<<"grad was allocated"<<endl;
         
         // dispatch
-        switch (inode->op)
-        {
-            case OpType::Mul:
-                cu_ops::mul(inode);
-                break;
-            case OpType::Skip:
-                cu_ops::skip(inode);
-                break;
-            default:
-                break;
-        }
+        op_based_eval(inode);
     }
 }
 
@@ -613,41 +673,43 @@ void geval(std::shared_ptr<Node> root)
     // perform topological sort
     vector<Node*> order = topo_sort(root, true);
 
-    int seed_size = utils::numel(root->h_meta->ndim, root->h_meta->shape());
-    root->d_content->allocate(seed_size);
-    bool _buff = root->flipped;
-    root->flipped = true;
-    cu_ops::fill(root.get(), 1.0f);
-    root->flipped = false;
-    root->flipped = _buff;
+    // fill the root node grad with beer
+    prepare_starting_grad(root);
 
-    
+    cout<<"GEVAL LOOP: "<<endl;
     // walk in order
     for (int i = order.size() - 2; i >= 0; --i)
     {   
         if (order[i]->kind == NodeKind::Source) continue;
 
         InternalNode* inode = static_cast<InternalNode*>(order[i]);
-
+        
         // allocate grad
         int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
-        inode->d_content->allocate(size);
-        inode->flipped = !inode->flipped;
+        inode->d_content->allocate_grad(size);
+        inode->flipped = true;
         
         // dispatch
-        switch (inode->op)
-        {
-            case OpType::Mul:
-                cu_ops::mul(inode);
-                break;
-            case OpType::Skip:
-                cu_ops::skip(inode);
-                break;
-            case OpType::MatMul:
-                cu_ops::matmul(inode);
-                break;
-            default:
-                break;
-        }
+        cout<<"node: "<<inode->label<<endl;
+        cout<<"flipped: "<<inode->flipped<<endl;
+        cout<<"is_grad: "<<inode->d_content->is_grad()<<endl;
+        cout<<"size: "<<inode->d_content->size()<<endl;
+        op_based_eval(inode);
+        print_node(inode);
+    }
+}
+
+void op_based_eval(InternalNode* inode)
+{
+    switch (inode->op)
+    {
+        case OpType::Add:           cu_ops::add(inode);                 return;
+        case OpType::Mul:           cu_ops::mul(inode);                 return;
+        case OpType::MatMul:        cu_ops::matmul(inode);              return;
+        case OpType::Contiguous:    cu_ops::contiguous(inode);          return;
+        case OpType::Sum:           cu_ops::reduce_last_dim(inode);     return;
+        case OpType::ExpandLD:      cu_ops::expand_last_dim(inode);     return;
+        case OpType::Reshape:       return; // no-op: shares d_content with input, data unchanged
+        default:                    return;
     }
 }
