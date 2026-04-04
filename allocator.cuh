@@ -85,35 +85,24 @@ private:
 
 struct ContentData
 {
-    Block* values_b_ptr = nullptr;
-    Block* grad_b_ptr = nullptr;
+    Block* b_ptr = nullptr;
     int _size = -1;
 
-    float* values();
-    float* grad();
+    float* data();
     int size();
     size_t bytes();
-    void allocate_values(int size);
-    void allocate_values(void);
-    void allocate_grad(int size);
-    void allocate_grad(void);
     void allocate(int size);
-    float* d_values_to_h();
-    float* d_grad_to_h();
-    void h_values_to_d(float* h_data, int size);
-    void h_grad_to_d(float* h_data, int size);
-    bool is_grad(void);
-    bool is_values(void);
+    float* d_to_h();
+    void h_to_d(float* h_data, int size);
+    bool is_allocated(void);
 
     ~ContentData()
     {
-        if (values_b_ptr) MemoryPool::call().free(values_b_ptr);
-        if (grad_b_ptr) MemoryPool::call().free(grad_b_ptr);
+        if (b_ptr) MemoryPool::call().free(b_ptr);
     }
 
     private:
-    void check_values(void);
-    void check_grad(void);
+    void check(void);
 };
 
 

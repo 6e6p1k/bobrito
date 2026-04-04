@@ -19,10 +19,10 @@ namespace cu_ops
 void add(InternalNode* res_node)
 {
     BroadcastInfo info = broadcast::elemwise(res_node);
-    float* res_data = res_node->get_values();
-    float* a_data = res_node->inputs[0]->get_values();
-    float* b_data = res_node->inputs[1]->get_values();
-    int n = res_node->d_content->size();
+    float* res_data = res_node->get_data();
+    float* a_data = res_node->inputs[0]->get_data();
+    float* b_data = res_node->inputs[1]->get_data();
+    int n = res_node->h_meta->size;
 
     int gridDim = (n + 255) / 256;
     int blockDim = 256;
@@ -33,10 +33,10 @@ void add(InternalNode* res_node)
 void gadd(InternalNode* res_node)
 {
     BroadcastInfo info = broadcast::elemwise(res_node);
-    float* res_data = res_node->d_content->values();
-    float* a_data = res_node->inputs[0]->get_values();
-    float* b_data = res_node->inputs[1]->get_values();
-    int n = res_node->d_content->size();
+    float* res_data = res_node->get_data();
+    float* a_data = res_node->inputs[0]->get_data();
+    float* b_data = res_node->inputs[1]->get_data();
+    int n = res_node->h_meta->size;
 
     int gridDim = (n + 255) / 256;
     int blockDim = 256;
@@ -47,10 +47,10 @@ void gadd(InternalNode* res_node)
 void mul(InternalNode* res_node)
 {
     BroadcastInfo info = broadcast::elemwise(res_node);
-    float* res_data = res_node->get_values();
-    float* a_data = res_node->inputs[0]->get_values();
-    float* b_data = res_node->inputs[1]->get_values();
-    int n = res_node->d_content->size();
+    float* res_data = res_node->get_data();
+    float* a_data = res_node->inputs[0]->get_data();
+    float* b_data = res_node->inputs[1]->get_data();
+    int n = res_node->h_meta->size;
 
     // cout<<"\n";
     // cout<<"RESULT:"<<res_node->label<<" flipped="<<res_node->flipped<<endl;
@@ -74,9 +74,9 @@ void matmul(InternalNode* res_node)
         return h;
     }();
 
-    float* a_data = res_node->inputs[0]->get_values();
-    float* b_data = res_node->inputs[1]->get_values();
-    float* res_data = res_node->get_values();
+    float* a_data = res_node->inputs[0]->get_data();
+    float* b_data = res_node->inputs[1]->get_data();
+    float* res_data = res_node->get_data();
     float alpha = 1.0f, beta = 0.0f;
 
     bool a_t = res_node->inputs[0]->transposed;
@@ -161,11 +161,11 @@ void matmul(InternalNode* res_node)
 
 //  float* src, float* dst, int* shape, int ndim, int n)
 void reduce_last_dim(InternalNode* res_node) {
-    float* res_data = res_node->get_values();
-    float* input_data = res_node->inputs[0]->get_values();
+    float* res_data = res_node->get_data();
+    float* input_data = res_node->inputs[0]->get_data();
     int* shape = res_node->inputs[0]->h_meta->shape();
     int ndim = res_node->inputs[0]->h_meta->ndim;
-    int size = utils::numel(ndim, shape);
+    int size = res_node->inputs[0]->h_meta->size;
     std::cout<<"size = "<<size<<"\n";
     
     int last_dim = shape[ndim - 1];
@@ -211,9 +211,9 @@ void reduce_last_dim(InternalNode* res_node) {
 
 void skip(InternalNode* res_node)
 {
-    float* res_grad = res_node->get_values();
-    float* a_grad = res_node->inputs[0]->get_values();
-    int size = res_node->d_content->size();
+    float* res_grad = res_node->get_data();
+    float* a_grad = res_node->inputs[0]->get_data();
+    int size = res_node->h_meta->size;
 
     int gridDim = (size + 255) / 256;
     int blockDim = 256;
@@ -223,8 +223,8 @@ void skip(InternalNode* res_node)
 
 void fill(Node* node, float val)
 {
-    float* data = node->get_values();
-    int size = node->d_content->size();
+    float* data = node->get_data();
+    int size = node->h_meta->size;
 
     int gridDim = (size + 255) / 256;
     int blockDim = 256;
@@ -234,8 +234,8 @@ void fill(Node* node, float val)
 
 void fill(SourceNode* node, float val)
 {
-    float* data = node->get_values();
-    int size = node->d_content->size();
+    float* data = node->get_data();
+    int size = node->h_meta->size;
 
     int gridDim = (size + 255) / 256;
     int blockDim = 256;
@@ -245,8 +245,8 @@ void fill(SourceNode* node, float val)
 
 void fill(InternalNode* node, float val)
 {
-    float* data = node->get_values();
-    int size = node->d_content->size();
+    float* data = node->get_data();
+    int size = node->h_meta->size;
 
     int gridDim = (size + 255) / 256;
     int blockDim = 256;
@@ -257,9 +257,9 @@ void fill(InternalNode* node, float val)
 void contiguous(InternalNode* res_node)
 {
     ContiguousInfo info = broadcast::contiguous(res_node);
-    float* res_data = res_node->get_values();
-    float* data = res_node->inputs[0]->get_values();
-    int size = res_node->d_content->size();
+    float* res_data = res_node->get_data();
+    float* data = res_node->inputs[0]->get_data();
+    int size = res_node->h_meta->size;
 
     int gridDim = (size + 255) / 256;
     int blockDim = 256;
@@ -270,11 +270,11 @@ void contiguous(InternalNode* res_node)
 
 void expand_last_dim(InternalNode* res_node)
 {
-    float* res_data = res_node->get_values();
-    float* data = res_node->inputs[0]->get_values();
+    float* res_data = res_node->get_data();
+    float* data = res_node->inputs[0]->get_data();
     int res_ndim = res_node->h_meta->ndim;
     int last_dim = res_node->h_meta->shape()[res_ndim];
-    int size = res_node->d_content->size();
+    int size = res_node->h_meta->size;
 
     int gridDim = (size + 255) / 256;
     int blockDim = 256;

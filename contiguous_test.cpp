@@ -63,12 +63,14 @@ int main(void)
     print_node(B.get());
 
     auto C = matmul(A, B);
-    auto D = sum(C, 0);
+    // auto D = sum(C, 0);
     
-    _backward(D);
-    export_dot_full(D.get(), "parovozik.dot");
-    eval(D);
-    geval(D);
+    _backward(C);
+    
+    export_dot_full(C.get(), "parovozik.dot");
+
+    eval(C);
+    _geval(C);
    
     cout<<"A: "<<endl;
     print_node(A.get());
@@ -76,8 +78,8 @@ int main(void)
     print_node(B.get());
     cout<<"C: "<<endl;
     print_node(C.get());
-    cout<<"D: "<<endl;
-    print_node(D.get());
+    // cout<<"D: "<<endl;
+    // print_node(D.get());
     // C = A @ B    | ([2, 3, 3] = [2, 3, 4] @ [4, 3])
     // A_g = ones @ B.T
 }

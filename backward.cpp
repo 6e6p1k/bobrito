@@ -92,19 +92,19 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 // dC/dA = dC @ B_T
                 shared_ptr<Node> B_T = copy_to_internal_node(inode->inputs[1], false, true, OpType::BwdHelper);
                 shared_ptr<Node> dC_dA = matmul(dC, B_T);
-                shared_ptr<InternalNode> bwd_a;
+                shared_ptr<BwdNode> bwd_a;
                 B_T->label = "B_T";
                 dC_dA->label = "dC_dA";
 
                 // CHECK if shapes match, otherwise out = (dC/dA).sum(dim=0, keepdims=false)
                 if (dC_dA->h_meta->ndim == inode->inputs[0]->h_meta->ndim) {
-                    bwd_a = static_pointer_cast<InternalNode>(dC_dA);
-                    bwd_a->d_content = inode->inputs[0]->d_content;
+                    bwd_a = internal_to_bwd(static_pointer_cast<InternalNode>(dC_dA));
                 } else {
                     shared_ptr<Node> node = sum(dC_dA, 0, false);
-                    bwd_a = static_pointer_cast<InternalNode>(node);
-                    bwd_a->d_content = inode->inputs[0]->d_content;
+                    bwd_a = internal_to_bwd(static_pointer_cast<InternalNode>(node));
                 }
+                inode->inputs[0]->d_grad = bwd_a->d_data;
+                cout<<"inode->inputs[0]->label="<<inode->inputs[0]->label<<endl;
                 bwd_a->label = inode->inputs[0]->label + "_grad";
                 build_backward(inode->inputs[0], bwd_a, param_count);
 
@@ -112,19 +112,19 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 // dC/dB = A_T @ dC
                 shared_ptr<Node> A_T = copy_to_internal_node(inode->inputs[0], false, true, OpType::BwdHelper);
                 shared_ptr<Node> dC_dB = matmul(A_T, dC);
-                shared_ptr<InternalNode> bwd_b;
+                shared_ptr<BwdNode> bwd_b;
                 A_T->label = "A_T";
                 dC_dB->label = "dC_dB";
 
                 // CHECK if shapes match, otherwise dC = (dC/dB).sum(dim=0, keepdims=false)
                 if (dC_dB->h_meta->ndim == inode->inputs[1]->h_meta->ndim) {
-                    bwd_b = static_pointer_cast<InternalNode>(dC_dB);
-                    bwd_b->d_content = inode->inputs[1]->d_content;
-                } else { 
+                    bwd_b = internal_to_bwd(static_pointer_cast<InternalNode>(dC_dB));    
+                } else {
                     shared_ptr<Node> node = sum(dC_dB, 0, false);
-                    bwd_b = static_pointer_cast<InternalNode>(node);
-                    bwd_b->d_content = inode->inputs[1]->d_content;
+                    bwd_b = internal_to_bwd(static_pointer_cast<InternalNode>(node));
                 }
+                inode->inputs[1]->d_grad = bwd_b->d_data;
+                cout<<"inode->inputs[1]->label="<<inode->inputs[1]->label<<endl;
                 bwd_b->label = inode->inputs[1]->label + "_grad";
                 build_backward(inode->inputs[1], bwd_b, param_count);
             }
@@ -164,12 +164,19 @@ void _backward(shared_ptr<Node> node)
 {
     // post_order_dfs(i4.get(), visited, order);
     if (node->kind == NodeKind::Source) throw logic_error("Cannot use .backward() on this tensor.");
-    shared_ptr<InternalNode> bwd_node = copy_to_internal_node(node);
-    node->outputs[0] = bwd_node;
-    bwd_node->num_inputs = 1;
-    bwd_node->inputs[0] = node; 
-    bwd_node->op = OpType::BwdStart;
-    bwd_node->label = "BACKWARD GRAPH START";
+
+    // construct cfg 
+    InodeConfig cfg;
+    cfg.op = OpType::BwdStart;
+    cfg.src = node;
+    cfg.num_inputs = 1;
+    std::shared_ptr<Node> inputs[] = {node};
+    cfg.inputs = inputs;
+    cfg.label = "BWD GRAPH START";
+
+    shared_ptr<BwdNode> bwd_node = copy_to_bwd_node(cfg);
+    cout<<"bwd_node->label="<<bwd_node->label<<endl;
+    cout<<"bwd_node->op="<<bwd_node->op<<endl;
     build_backward(node, bwd_node, bwd_node->param_count);
 }
 

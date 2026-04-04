@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <memory>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 #include <string>
@@ -17,6 +18,7 @@ enum class NodeKind { Source, Internal };
 struct ShapeData
 {
     int ndim;
+    int size;
     int data[0];
 
     static ShapeData* init(int ndim);
@@ -36,15 +38,15 @@ struct Node
 {
     NodeKind kind;
     ShapePtr h_meta;       // shape, strides, ndim on host (shareable between fwd/bwd nodes)
-    ContentPtr d_content;    // values + grad on device (shareable between fwd/bwd nodes)
-    bool flipped = false; // for backward specifically, flips the values and grad in the ContentData
-    bool transposed = false; 
+    ContentPtr d_data;     // forward values on device
+    ContentPtr d_grad;     // gradient on device
+    bool flipped = false;  // when true, get_data() returns d_grad instead of d_data
+    bool transposed = false;
     int param_count = 0;
     std::string label; // just to test, remove later
     std::shared_ptr<Node> outputs[4]; // for grad
-    
-    float* get_values();
-    float* get_grad();
+
+    virtual float* get_data();
     virtual ~Node() = default;
 };
 
@@ -62,7 +64,15 @@ struct InternalNode : Node
     int num_inputs;
 };
 
+struct BwdNode : InternalNode
+{
+    float* get_data() override;
+};
+
 struct InodeConfig {
+    // node to copy from
+    std::shared_ptr<Node> src = nullptr;
+
     // general info
     OpType op = OpType::null;
     std::string label = "";
@@ -70,15 +80,50 @@ struct InodeConfig {
     // ShapeData
     int* shape = nullptr;
     int* strides = nullptr;
-    int ndim;
+    int ndim = -1;
 
     // linking
-    std::shared_ptr<Node>* inputs = nullptr;
-    int num_inputs;
-    int param_count;
+    std::shared_ptr<Node>* inputs = nullptr; 
+    int num_inputs = -1;
+
+    int param_count = -1;
 
     // to transform data existing node
     std::shared_ptr<Node> dst = nullptr;
+    ContentPtr src_d_data = nullptr;
+    ContentPtr src_d_grad = nullptr;
+    bool copy_linking = false;
+
+    bool is_op() const {
+        return op != OpType::null;
+    }
+
+    bool is_linking() const {
+        if (num_inputs == -1 || inputs == nullptr) return false;
+        if (num_inputs < 1 && num_inputs > 2) throw std::logic_error("Unacceptable number of inputs."); // cap at 2 for now
+        return true;
+    }
+
+    // Checks if shape data is provided
+    bool is_meta() const {
+        return shape != nullptr && ndim >= 0; // ndim 0 is valid for scalars
+    }
+
+    bool is_label() const {
+        return label != "";
+    }
+
+    bool is_param_count() const {
+        return param_count != -1;
+    }
+
+    bool data_transfer_required() const {
+        return src_d_data != nullptr || src_d_grad != nullptr;
+    }
+
+    bool data_copying_required() const {
+        return src != nullptr;
+    }
 };
 
 std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides = nullptr, int param_count = 0);
@@ -89,6 +134,8 @@ std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> exampl
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
 std::shared_ptr<InternalNode> gcopy_to_internal_node(std::shared_ptr<Node> example);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped, bool transposed, OpType op);
+std::shared_ptr<BwdNode> copy_to_bwd_node(InodeConfig cfg);
+std::shared_ptr<BwdNode> internal_to_bwd(std::shared_ptr<InternalNode> src);
 void prepare_starting_grad(std::shared_ptr<InternalNode> node);
 void prepare_starting_grad(std::shared_ptr<Node> node);
 void print_node(Node* node);
@@ -116,12 +163,16 @@ std::shared_ptr<Node> expand_last_dim(std::shared_ptr<Node> a, int* desired_shap
 // <Topological sort>
 void _build_topo(Node* node, std::unordered_set<Node*>& visited, std::vector<InternalNode*>& inodes, std::vector<SourceNode*>& snodes);
 void build_topo(Node* node, std::unordered_set<Node*>& visited, std::vector<Node*>& order);
+void build_topo_grad(BwdNode* node, std::unordered_set<BwdNode*>& visited, std::vector<BwdNode*>& order);
+void build_topo_grad(InternalNode* node, std::unordered_set<InternalNode*>& visited, std::vector<InternalNode*>& order);
 std::vector<Node*> topo_sort(std::shared_ptr<InternalNode> node, bool grad);
 std::vector<Node*> topo_sort(std::shared_ptr<Node> node, bool grad);
 // </Topological sort>
 
 void op_based_eval(InternalNode* inode);
+void op_based_eval(BwdNode* inode);
 void eval(std::shared_ptr<InternalNode> root);
 void eval(std::shared_ptr<Node> root);
 void geval(std::shared_ptr<InternalNode> root);
 void geval(std::shared_ptr<Node> root);
+void _geval(std::shared_ptr<Node> root);

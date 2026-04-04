@@ -27,7 +27,7 @@ void print_all_nodes_grads(vector<Node*> nodes)
     cout<<"Source nodes: "<<endl;
     for (int i = 0; i < nodes.size(); ++i)
     {
-        auto h_grad = nodes[i]->d_content->d_grad_to_h();
+        auto h_grad = nodes[i]->d_grad->d_to_h();
         cout<<"Node "<<nodes[i]->label<<" grad: "<<h_grad[0]<<endl;
     } 
 }
@@ -50,9 +50,9 @@ std::shared_ptr<SourceNode> fill(int ndim, int* shape, float val, bool requires_
     node->h_meta = make_shape_data(ndim, shape);
     node->h_requiers_grad = requires_grad;
     node->param_count++;
-    node->d_content = make_shared<ContentData>();
+    node->d_data = make_shared<ContentData>();
     int size = utils::numel(ndim, shape);
-    node->d_content->allocate_values(size);
+    node->d_data->allocate(size);
     cu_ops::fill(node.get(), val);
     return node;
 }

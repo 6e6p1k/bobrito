@@ -3,4 +3,4 @@ instead in case of OpType::BwdStart use fill kernel
 
 param_count is fucked up, gotta do sth with it, since rn it just carries literally no sense/
 
-asign flip before geval() in the build_backward.
+asign flip before geval() in the build_backward

@@ -198,136 +198,61 @@ constexpr int MemoryPool::BLOCKS_PER_TIER[];
 
 
 // <ContentData>
-void ContentData::allocate_values(int size)
-{
-    if (!values_b_ptr)
-    {
-        MemoryPool::call().allocate(&values_b_ptr, size * sizeof(float));
-        _size = size;
-    }
-}
-
-void ContentData::allocate_values(void)
-{
-    if (!values_b_ptr)
-    {
-        if (!grad_b_ptr) throw std::logic_error("Grad was never allocated. unknown size.");
-        MemoryPool::call().allocate(&values_b_ptr, size() * sizeof(float));
-    }
-    
-}
-
-void ContentData::allocate_grad(int size)
-{
-    if (!grad_b_ptr)
-    {
-        MemoryPool::call().allocate(&grad_b_ptr, size * sizeof(float));
-        _size = size;
-    }
-}
-
-void ContentData::allocate_grad(void)
-{
-    if (!grad_b_ptr)
-    {
-        if (!values_b_ptr) throw std::logic_error("Values were never allocated. unknown size.");
-        MemoryPool::call().allocate(&grad_b_ptr, size() * sizeof(float));
-    }
-    
-}
-
 void ContentData::allocate(int size)
 {
-    allocate_values(size);
-    allocate_grad();
+    if (!b_ptr)
+    {
+        MemoryPool::call().allocate(&b_ptr, size * sizeof(float));
+        _size = size;
+    }
 }
 
-float* ContentData::values()
+float* ContentData::data()
 {
-    // Returns pointer to values on device.
-    check_values();
-    return values_b_ptr->d_ptr;
-}
-
-float* ContentData::grad()
-{
-    // Returns pointer to grad on device.
-    check_grad();
-    return grad_b_ptr->d_ptr;
+    check();
+    return b_ptr->d_ptr;
 }
 
 int ContentData::size()
-{   
+{
     if (_size == -1) throw std::logic_error("Nothing was allocated yet. nowhere to get size.");
     else return _size;
 }
 
 size_t ContentData::bytes()
 {
-    // Returns size of grad / values in bytes.
     return size() * sizeof(float);
 }
 
-float* ContentData::d_values_to_h()
+float* ContentData::d_to_h()
 {
-    check_values();
-    float* dst = (float*)malloc(values_b_ptr->size);
-    cudaMemcpy(dst, values_b_ptr->d_ptr, values_b_ptr->size, cudaMemcpyDeviceToHost);
+    check();
+    float* dst = (float*)malloc(b_ptr->size);
+    cudaMemcpy(dst, b_ptr->d_ptr, b_ptr->size, cudaMemcpyDeviceToHost);
     return dst;
 }
 
-float* ContentData::d_grad_to_h()
-{
-    check_grad();
-    float* dst = (float*)malloc(grad_b_ptr->size);
-    cudaMemcpy(dst, grad_b_ptr->d_ptr, grad_b_ptr->size, cudaMemcpyDeviceToHost);
-    return dst;
-}
-
-void ContentData::h_values_to_d(float* h_data, int size)
+void ContentData::h_to_d(float* h_data, int size)
 {
     size_t bytes = size * sizeof(float);
-    if (!values_b_ptr)
+    if (!b_ptr)
     {
-        MemoryPool::call().allocate(&values_b_ptr, bytes);
+        MemoryPool::call().allocate(&b_ptr, bytes);
     }
-    cudaMemcpy(values_b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice);
 }
 
-void ContentData::h_grad_to_d(float* h_data, int size)
+void ContentData::check(void)
 {
-    size_t bytes = size * sizeof(float);
-    if (!grad_b_ptr)
-    {
-        MemoryPool::call().allocate(&grad_b_ptr, bytes);
-    }
-    cudaMemcpy(grad_b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice);
+    if (!b_ptr) throw std::logic_error("ContentData was never allocated.");
+    if (!(b_ptr->d_ptr)) throw std::logic_error("ContentData is empty.");
+    if (!(b_ptr->size)) throw std::logic_error("Size is not specified.");
 }
 
-void ContentData::check_values(void)
+bool ContentData::is_allocated(void)
 {
-    if (!values_b_ptr) throw std::logic_error("Values were never allocated.");
-    if (!(values_b_ptr->d_ptr)) throw std::logic_error("Values is empty.");
-    if (!(values_b_ptr->size)) throw std::logic_error("Size is not specified.");
-}
-
-void ContentData::check_grad(void)
-{
-    if (!grad_b_ptr) throw std::logic_error("Grad was never allocated.");
-    if (!(grad_b_ptr->d_ptr)) throw std::logic_error("Grad is empty.");
-}
-
-bool ContentData::is_grad(void)
-{
-    if (!grad_b_ptr) return false;
-    if (!(grad_b_ptr->d_ptr)) return false;
-    return true;
-}
-
-bool ContentData::is_values(void)
-{
-    if (!values_b_ptr) return false;
-    if (!(values_b_ptr->d_ptr)) return false;
+    if (!b_ptr) { std::cout<<"no block ptr\n"; return false; }
+    if (!(b_ptr->d_ptr)) { std::cout<<"block but no data\n"; return false; }
     return true;
 }
 // </ContentData>

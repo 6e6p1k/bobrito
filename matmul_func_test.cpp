@@ -27,8 +27,8 @@ static shared_ptr<SourceNode> make_filled(int ndim, int* shape, vector<float> da
     node->h_meta = make_shape_data(ndim, shape);
     node->h_requiers_grad = requires_grad;
     node->param_count = requires_grad ? 1 : 0;
-    node->d_content = make_shared<ContentData>();
-    node->d_content->h_values_to_d(data.data(), (int)data.size());
+    node->d_data = make_shared<ContentData>();
+    node->d_data->h_to_d(data.data(), (int)data.size());
     return node;
 }
 
@@ -36,7 +36,7 @@ static shared_ptr<SourceNode> make_filled(int ndim, int* shape, vector<float> da
 static vector<float> to_host(shared_ptr<Node> node)
 {
     int n = utils::numel(node->h_meta->ndim, node->h_meta->shape());
-    float* h = node->d_content->d_values_to_h();
+    float* h = node->d_data->d_to_h();
     vector<float> out(h, h + n);
     delete[] h;
     return out;
