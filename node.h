@@ -8,7 +8,7 @@
 
 #include "allocator.cuh"
 
-enum class OpType {null, Add, Mul, MatMul, Sum, Max, Min, ReLU, Skip, Contiguous, Reshape, ExpandLD, BwdStart, BwdHelper};
+enum class OpType {null, Add, Mul, MatMul, Sub, Div, SumLD, MaxLD, MinLD, ArgMaxLD, ReLU, BwdReLU, Skip, Contiguous, Reshape, ExpandLD, BwdStart, BwdHelper};
 std::ostream& operator<<(std::ostream& os, const OpType& op);
 std::string opToString(const OpType& op);
 
@@ -39,14 +39,14 @@ struct Node
     NodeKind kind;
     ShapePtr h_meta;       // shape, strides, ndim on host (shareable between fwd/bwd nodes)
     ContentPtr d_data;     // forward values on device
-    ContentPtr d_grad;     // gradient on device
-    bool flipped = false;  // when true, get_data() returns d_grad instead of d_data
+    std::shared_ptr<Node> grad_node;     // gradient on device
     bool transposed = false;
     int param_count = 0;
     std::string label; // just to test, remove later
-    std::shared_ptr<Node> outputs[4]; // for grad
+    std::weak_ptr<Node> outputs[4]; // for grad
 
-    virtual float* get_data();
+    float* get_data();
+    bool is_data_allocated();
     virtual ~Node() = default;
 };
 
@@ -62,11 +62,6 @@ struct InternalNode : Node
     OpType op;  // operation that was used to create this node
     std::shared_ptr<Node> inputs[4];
     int num_inputs;
-};
-
-struct BwdNode : InternalNode
-{
-    float* get_data() override;
 };
 
 struct InodeConfig {
@@ -91,8 +86,10 @@ struct InodeConfig {
     // to transform data existing node
     std::shared_ptr<Node> dst = nullptr;
     ContentPtr src_d_data = nullptr;
-    ContentPtr src_d_grad = nullptr;
+    ContentPtr src_grad_node = nullptr;
     bool copy_linking = false;
+    bool copy_data = false;
+    bool copy_grad = false;
 
     bool is_op() const {
         return op != OpType::null;
@@ -118,7 +115,7 @@ struct InodeConfig {
     }
 
     bool data_transfer_required() const {
-        return src_d_data != nullptr || src_d_grad != nullptr;
+        return src_d_data != nullptr || src_grad_node != nullptr;
     }
 
     bool data_copying_required() const {
@@ -133,9 +130,8 @@ std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, int param_count);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
 std::shared_ptr<InternalNode> gcopy_to_internal_node(std::shared_ptr<Node> example);
-std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped, bool transposed, OpType op);
-std::shared_ptr<BwdNode> copy_to_bwd_node(InodeConfig cfg);
-std::shared_ptr<BwdNode> internal_to_bwd(std::shared_ptr<InternalNode> src);
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool transposed, OpType op);
+std::shared_ptr<InternalNode> copy_to_internal_node(InodeConfig cfg);
 void prepare_starting_grad(std::shared_ptr<InternalNode> node);
 void prepare_starting_grad(std::shared_ptr<Node> node);
 void print_node(Node* node);
@@ -149,28 +145,31 @@ std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, boo
 
 std::shared_ptr<Node> add(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
 std::shared_ptr<Node> mul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
-std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims = false);
-std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims = false);
+std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
+std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
+std::shared_ptr<Node> argmax(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
 std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b, std::shared_ptr<Node> dst = nullptr);
-std::shared_ptr<Node> skip(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> skip(std::shared_ptr<Node> a);
+std::shared_ptr<Node> copy(std::shared_ptr<Node> a, std::shared_ptr<Node> dst);
 std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
 std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_ndim);
 std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
 std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims = false);
 std::shared_ptr<Node> expand_last_dim(std::shared_ptr<Node> a, int* desired_shape, int ndim, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> node, int* target_shape, int target_ndim);
+std::shared_ptr<Node> relu(std::shared_ptr<Node> a);
+
 // </nodes interaction>
 
 // <Topological sort>
 void _build_topo(Node* node, std::unordered_set<Node*>& visited, std::vector<InternalNode*>& inodes, std::vector<SourceNode*>& snodes);
 void build_topo(Node* node, std::unordered_set<Node*>& visited, std::vector<Node*>& order);
-void build_topo_grad(BwdNode* node, std::unordered_set<BwdNode*>& visited, std::vector<BwdNode*>& order);
 void build_topo_grad(InternalNode* node, std::unordered_set<InternalNode*>& visited, std::vector<InternalNode*>& order);
 std::vector<Node*> topo_sort(std::shared_ptr<InternalNode> node, bool grad);
 std::vector<Node*> topo_sort(std::shared_ptr<Node> node, bool grad);
 // </Topological sort>
 
 void op_based_eval(InternalNode* inode);
-void op_based_eval(BwdNode* inode);
 void eval(std::shared_ptr<InternalNode> root);
 void eval(std::shared_ptr<Node> root);
 void geval(std::shared_ptr<InternalNode> root);

@@ -10,12 +10,10 @@
 // <Block struct>
 OutStatus Block::allocate_block(void)
 {
-    cudaError_t status;
-    if (kind==BlockKind::Data) status = cudaMalloc(&d_ptr, size);
-    else status = cudaMalloc(&meta_ptr, size);
-
+    cudaError_t status = cudaMalloc(&d_ptr, size);
     if (status)
     {
+        std::cout << "cudaMalloc FAILED: " << cudaGetErrorString(status) << " size=" << size << std::endl;
         return OutStatus::Error;
     }
     return OutStatus::Success;
@@ -23,10 +21,7 @@ OutStatus Block::allocate_block(void)
 
 OutStatus Block::free_block(void)
 {
-    cudaError_t status;
-    if (kind==BlockKind::Data) status = cudaFree(d_ptr);
-    else status = cudaFree(meta_ptr);
-
+    cudaError_t status = cudaFree(d_ptr);
     if (status)
     {
         return OutStatus::Error;
@@ -36,7 +31,7 @@ OutStatus Block::free_block(void)
 // </Block struct>
 
 // <Grid struct>
-Grid* Grid::init(int max_blocks_num, int size_per_block, BlockKind kind)
+Grid* Grid::init(int max_blocks_num, int size_per_block)
 {
     size_t total_bytes = sizeof(Grid) + sizeof(Block) * max_blocks_num;
 
@@ -47,17 +42,15 @@ Grid* Grid::init(int max_blocks_num, int size_per_block, BlockKind kind)
         grid->is_free = true;
         grid->next_free_block = nullptr;
         grid->next_free_grid = nullptr;
-        
+
         // init linked list of free blocks
         Block* raw = grid->blocks;
-        raw->kind = kind;
         // set every block but the last one
         for (int i = 0; i < max_blocks_num - 1; i++) {
             raw[i].next_free = &raw[i+1];
             raw[i].size = size_per_block;
             raw[i].allocate_block();
             raw[i].mom = grid;
-            raw[i].kind = kind;
         }
         // set the last one
         raw[max_blocks_num-1].next_free = nullptr;
@@ -135,54 +128,52 @@ OutStatus MemoryPool::reset(void)
     for (int i = 0; i < 5; ++i)
     {
         if (grids[i]->free_grid() != OutStatus::Success) return OutStatus::Error;
-        grids[i] = Grid::init(BLOCKS_PER_TIER[i], TIER_SIZES[i], BLOCK_KIND[i]);
+        grids[i] = Grid::init(BLOCKS_PER_TIER[i], TIER_SIZES[i]);
     }
     return OutStatus::Success;
 
 }
 
-void MemoryPool::allocate(Block** dst, size_t bytes, BlockKind kind) {
-    int tier = pick_grid_tier(bytes, kind);
+void MemoryPool::allocate(Block** dst, size_t bytes) {
+    int tier = pick_grid_tier(bytes);
     Grid* grid = grids[tier];
     while (grid != nullptr)
     {
         if (grid->is_free)
         {
-            grid->get_free(dst);
+            OutStatus status = grid->get_free(dst);
             return;
         }
         grid = grid->next_free_grid;
     }
-
     // not free grids -> make a new one
-    grid = make_connect_grid(tier, kind);
+    grid = make_connect_grid(tier);
     OutStatus status = grid->get_free(dst);    
 }
 
 // private constructor
 MemoryPool::MemoryPool() 
 {
-    grids[0] = Grid::init(256, MICRO_BLOCK, BlockKind::MetaData); // micro block for metadata
+    grids[0] = Grid::init(256, MICRO_BLOCK);
     grids[1] = Grid::init(256, TINY_BLOCK);
     grids[2] = Grid::init(128, SMALL_BLOCK);
     grids[3] = Grid::init(64,  MEDIUM_BLOCK);
     grids[4] = Grid::init(32,  LARGE_BLOCK);
 } 
     
-int MemoryPool::pick_grid_tier(size_t bytes, BlockKind kind) 
+int MemoryPool::pick_grid_tier(size_t bytes)
 {
-    if (bytes <= MICRO_BLOCK && kind == BlockKind::MetaData)    
-        return 0; // solely for metadata 
+    if (bytes <= MICRO_BLOCK)  return 0;
     if (bytes <= TINY_BLOCK)   return 1;
     if (bytes <= SMALL_BLOCK)  return 2;
     if (bytes <= MEDIUM_BLOCK) return 3;
     return 4;
 }
 
-Grid* MemoryPool::make_connect_grid(int tier, BlockKind kind)
+Grid* MemoryPool::make_connect_grid(int tier)
 {
     // make grid
-    Grid* new_grid = Grid::init(BLOCKS_PER_TIER[tier], TIER_SIZES[tier], kind);
+    Grid* new_grid = Grid::init(BLOCKS_PER_TIER[tier], TIER_SIZES[tier]);
 
     // link new grid into the beginning
     Grid* tmp = grids[tier]->next_free_grid;
@@ -210,7 +201,7 @@ void ContentData::allocate(int size)
 float* ContentData::data()
 {
     check();
-    return b_ptr->d_ptr;
+    return (float*)b_ptr->d_ptr;
 }
 
 int ContentData::size()

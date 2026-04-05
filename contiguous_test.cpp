@@ -52,8 +52,8 @@ using namespace std;
 // MATMUL TEST
 int main(void)
 {   
-    int A_shape[] =  {3, 4};
-    auto A = qq::fill(2, A_shape, 3, true);
+    int A_shape[] =  {2, 3, 4};
+    auto A = qq::fill(3, A_shape, 3, true);
     A->label = "A";
     print_node(A.get());
 
@@ -63,14 +63,14 @@ int main(void)
     print_node(B.get());
 
     auto C = matmul(A, B);
-    // auto D = sum(C, 0);
+    auto D = sum(C, 0);
     
-    _backward(C);
+    _backward(D);
     
     export_dot_full(C.get(), "parovozik.dot");
 
-    eval(C);
-    _geval(C);
+    eval(D);
+    _geval(D);
    
     cout<<"A: "<<endl;
     print_node(A.get());
@@ -78,8 +78,8 @@ int main(void)
     print_node(B.get());
     cout<<"C: "<<endl;
     print_node(C.get());
-    // cout<<"D: "<<endl;
-    // print_node(D.get());
+    cout<<"D: "<<endl;
+    print_node(D.get());
     // C = A @ B    | ([2, 3, 3] = [2, 3, 4] @ [4, 3])
     // A_g = ones @ B.T
 }

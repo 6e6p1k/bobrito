@@ -10,6 +10,20 @@
 
 using namespace std;
 
+void set_grad_and_travers(std::shared_ptr<Node> fwd_node, std::shared_ptr<Node> new_grad, int param_count) {
+    if (fwd_node->grad_node) {
+        // chagne old labels
+        fwd_node->grad_node->label = fwd_node->label + ".partial_grad";
+        new_grad->label = fwd_node->label + ".partial_grad";
+        // accumulate grad
+        fwd_node->grad_node = add(fwd_node->grad_node, new_grad);
+        fwd_node->grad_node->label = fwd_node->label + ".grad";
+    } else {
+        fwd_node->grad_node = new_grad;
+        build_backward(fwd_node, std::static_pointer_cast<InternalNode>(new_grad), param_count);
+    }
+}
+
 void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node, int param_count) {
     
     if (fwd_node->kind == NodeKind::Source) {
@@ -21,138 +35,169 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
     }
 
     shared_ptr<InternalNode> inode = dynamic_pointer_cast<InternalNode>(fwd_node);
-    if (param_count < 0) return;
+    if (inode->param_count < 0) return;
     
+    // cout<<"INSIDE BUILD_BACKWARD ----------------------------------\n";
+    // cout<<"Op: "<<inode->op<<endl;
+
     switch (inode->op) {
         case OpType::Add:
             {
-                auto bwd_a = gcopy_to_internal_node(inode->inputs[0]);
-                bwd_node->outputs[0] = bwd_a; // connect via outputs
-                bwd_a->num_inputs = 1;
-                bwd_a->inputs[0] = bwd_node; // connect via inputs
-                bwd_a->op = OpType::Skip;
-                bwd_a->param_count = param_count;
-                build_backward(inode->inputs[0], bwd_a, param_count);
+                shared_ptr<Node> A = inode->inputs[0];
+                shared_ptr<Node> B = inode->inputs[1];
+                // C = inode    (dC = gradient of C, which is in bwd_node)
+                // C = A + B
+                auto dC = bwd_node;
+                dC->label = "d" + inode->label;
+
+                // dC/dA = dC
+                shared_ptr<Node> dC_dA = skip(dC);
+                dC_dA->label = dC->label + " / d("+ A->label + ")";
+                shared_ptr<Node> dA = reduce_to_shape(dC_dA, A->h_meta->shape(), A->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(dA);
+                bwd_a->label = A->label + ".grad";
+                set_grad_and_travers(A, bwd_a, param_count);
+
                 
-                auto bwd_b = gcopy_to_internal_node(inode->inputs[1]);
-                bwd_node->outputs[1] = bwd_b; // connect via outputs
-                bwd_b->num_inputs = 1;
-                bwd_b->inputs[0] = bwd_node; // connect via inputs
-                bwd_b->op = OpType::Skip;
-                bwd_b->param_count = param_count;
-                build_backward(inode->inputs[1], bwd_b, param_count);
+                // dC/dB = dC
+                shared_ptr<Node> dC_dB = skip(dC);
+                dC_dB->label = dC->label + " / d("+ B->label + ")";
+                shared_ptr<Node> dB = reduce_to_shape(dC_dB, B->h_meta->shape(), B->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_b = static_pointer_cast<InternalNode>(dB);
+                bwd_b->label = B->label + ".grad";
+                set_grad_and_travers(B, bwd_b, param_count);
             }
             break;
             
         case OpType::Mul:
             {
-                // A = inode->inputs[0]
-                // B = innode->inputs[1]
+                shared_ptr<Node> A = inode->inputs[0];
+                shared_ptr<Node> B = inode->inputs[1];
                 // C = inode    (dC = gradient of C, which is in bwd_node)
                 // C = A * B
                 auto dC = bwd_node;
+                dC->label = "d" + inode->label;
 
                 // dC/dA = dC * B
-                // CHECK if shapes match, otherwise out = (dC/dA).sum(dim=0, keepdims=false)
-                auto bwd_a = gcopy_to_internal_node(inode->inputs[0]);
-                auto B = copy_to_internal_node(inode->inputs[1], false, false, OpType::BwdHelper);
-                auto dC_dA = mul(dC, B);
-                if (dC_dA->h_meta->ndim != bwd_a->h_meta->ndim) bwd_a->op = OpType::Sum;
-                else bwd_a->op = OpType::Skip;
-                bwd_node->outputs[0] = bwd_a;
-                bwd_a->num_inputs = 1;
-                bwd_a->inputs[0] = dC_dA;
-                bwd_a->param_count = param_count;
-                build_backward(inode->inputs[0], bwd_a, param_count);
+                shared_ptr<Node> B_bwd = copy_to_internal_node(B, false, OpType::BwdHelper);
+                auto dC_dA = mul(dC, B_bwd);
+                dC_dA->label = dC->label + " / d("+ A->label + ")";
+
+                // Check if shapes match, otherwise out = (dC/dA).sum(dim=0, keepdims=false)
+                shared_ptr<Node> dA = reduce_to_shape(dC_dA, A->h_meta->shape(), A->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(dA);
+                bwd_a->label = A->label + ".grad";
+                set_grad_and_travers(A, bwd_a, param_count);
+
 
                 // dC/dB = A * dC
-                // CHECK if shapes match, otherwise dC = (dC/dB).sum(dim=0, keepdims=false)
-                auto bwd_b = gcopy_to_internal_node(inode->inputs[1]);
-                auto A = copy_to_internal_node(inode->inputs[0], false, false, OpType::BwdHelper);
-                auto dC_dB = mul(A, dC);
-                if (dC_dB->h_meta->ndim != bwd_b->h_meta->ndim) bwd_b->op = OpType::Sum; // assuming that sum sees the out shape and like ah i get it
-                else bwd_b->op = OpType::Skip;
-                bwd_node->outputs[1] = bwd_b;
-                bwd_b->num_inputs = 1;
-                bwd_b->inputs[0] = dC_dB; // needs transpose
-                bwd_b->param_count = param_count;
-                build_backward(inode->inputs[1], bwd_b, param_count);
+                auto A_bwd = copy_to_internal_node(A, false, OpType::BwdHelper);
+                auto dC_dB = mul(A_bwd, dC);
+                dC_dB->label = dC->label + " / d("+ B->label + ")";
+
+                // Check if shapes match, otherwise dC = (dC/dB).sum(dim=0, keepdims=false)
+                shared_ptr<Node> dB = reduce_to_shape(dC_dB, B->h_meta->shape(), B->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_b = static_pointer_cast<InternalNode>(dB);
+                bwd_b->label = B->label + ".grad";
+                set_grad_and_travers(B, bwd_b, param_count);
             }
             break;
 
         case OpType::MatMul:
             {
-                // A = inode->inputs[0]
-                // B = innode->inputs[1]
+                shared_ptr<Node> A = inode->inputs[0];
+                shared_ptr<Node> B = inode->inputs[1];
                 // C = inode    (dC = gradient of C, which is in bwd_node)
                 // C = A @ B
                 shared_ptr<Node> dC = bwd_node;
-                dC->label = "dC";
+                dC->label = "d" + inode->label;
 
                 // dC/dA = dC @ B_T
-                shared_ptr<Node> B_T = copy_to_internal_node(inode->inputs[1], false, true, OpType::BwdHelper);
+                shared_ptr<Node> B_T = copy_to_internal_node(B, true, OpType::BwdHelper);
                 shared_ptr<Node> dC_dA = matmul(dC, B_T);
-                shared_ptr<BwdNode> bwd_a;
-                B_T->label = "B_T";
-                dC_dA->label = "dC_dA";
+                B_T->label = B_T->label + ".T";
+                dC_dA->label = dC->label + " / d("+ A->label + ")";
 
-                // CHECK if shapes match, otherwise out = (dC/dA).sum(dim=0, keepdims=false)
-                if (dC_dA->h_meta->ndim == inode->inputs[0]->h_meta->ndim) {
-                    bwd_a = internal_to_bwd(static_pointer_cast<InternalNode>(dC_dA));
-                } else {
-                    shared_ptr<Node> node = sum(dC_dA, 0, false);
-                    bwd_a = internal_to_bwd(static_pointer_cast<InternalNode>(node));
-                }
-                inode->inputs[0]->d_grad = bwd_a->d_data;
-                cout<<"inode->inputs[0]->label="<<inode->inputs[0]->label<<endl;
-                bwd_a->label = inode->inputs[0]->label + "_grad";
-                build_backward(inode->inputs[0], bwd_a, param_count);
+                // Check if shapes match, otherwise out = (dC/dA).sum(dim=0, keepdims=false)
+                shared_ptr<Node> dA = reduce_to_shape(dC_dA, A->h_meta->shape(), A->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(dA);
+                bwd_a->label = A->label + ".grad";
+                set_grad_and_travers(A, bwd_a, param_count);
 
 
                 // dC/dB = A_T @ dC
-                shared_ptr<Node> A_T = copy_to_internal_node(inode->inputs[0], false, true, OpType::BwdHelper);
+                shared_ptr<Node> A_T = copy_to_internal_node(A, true, OpType::BwdHelper);
                 shared_ptr<Node> dC_dB = matmul(A_T, dC);
-                shared_ptr<BwdNode> bwd_b;
-                A_T->label = "A_T";
-                dC_dB->label = "dC_dB";
+                A_T->label = A_T->label + ".T";
+                dC_dB->label = dC->label + " / d("+ B->label + ")";
 
-                // CHECK if shapes match, otherwise dC = (dC/dB).sum(dim=0, keepdims=false)
-                if (dC_dB->h_meta->ndim == inode->inputs[1]->h_meta->ndim) {
-                    bwd_b = internal_to_bwd(static_pointer_cast<InternalNode>(dC_dB));    
-                } else {
-                    shared_ptr<Node> node = sum(dC_dB, 0, false);
-                    bwd_b = internal_to_bwd(static_pointer_cast<InternalNode>(node));
-                }
-                inode->inputs[1]->d_grad = bwd_b->d_data;
-                cout<<"inode->inputs[1]->label="<<inode->inputs[1]->label<<endl;
-                bwd_b->label = inode->inputs[1]->label + "_grad";
-                build_backward(inode->inputs[1], bwd_b, param_count);
+                // Check if shapes match, otherwise dC = (dC/dB).sum(dim=0, keepdims=false)
+                shared_ptr<Node> dB = reduce_to_shape(dC_dB, B->h_meta->shape(), B->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_b = static_pointer_cast<InternalNode>(dB);
+                bwd_b->label = B->label + ".grad";
+                set_grad_and_travers(B, bwd_b, param_count);
             }
             break;
 
-        case OpType::Sum:
+        case OpType::SumLD:
             {
-                shared_ptr<Node> node = expand_last_dim(bwd_node, inode->inputs[0]->h_meta->shape(), inode->inputs[0]->h_meta->ndim);
-                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(node);
-                build_backward(inode->inputs[0], bwd_a, param_count);
+                shared_ptr<Node> A = inode->inputs[0];
+                // C = sum_last_dim(A)
+                // dC/dA = expand_last_dim(dC) (where dC = bwd_node)
+                auto dC = bwd_node;
+                dC->label = "d" + inode->label;
+
+                shared_ptr<Node> dA = expand_last_dim(dC, A->h_meta->shape(), A->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(dA);
+                bwd_a->label = A->label + ".grad";
+                set_grad_and_travers(A, bwd_a, param_count);
             }
             break;
 
         case OpType::Reshape:
             {
-                cout<<"HUUUUUY!"<<endl;
-                shared_ptr<Node> node = reshape(bwd_node, inode->inputs[0]->h_meta->shape(), inode->inputs[0]->h_meta->ndim);
-                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(node);
-                build_backward(inode->inputs[0], bwd_a, param_count);
+                shared_ptr<Node> A = inode->inputs[0];
+                // C = reshape(A, dC.shape)
+                // dC/dA = reshape(dC, A.shape) (where dC = bwd_node)
+                auto dC = bwd_node;
+                dC->label = "d" + inode->label;
+
+                shared_ptr<Node> dA = reshape(dC, A->h_meta->shape(), A->h_meta->ndim);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(dA);
+                bwd_a->label = A->label + ".grad";
+                set_grad_and_travers(A, bwd_a, param_count);
             }
             break;
         case OpType::Contiguous:
             {
-                cout<<"HUUUUUY!"<<endl;
-                shared_ptr<Node> node = contiguous(bwd_node);
-                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(node);
-                // cout<<"bwd_a->inputs[0]->label in build_backward contiguous: "<<bwd_a->outputs[0]->label<<endl;
-                build_backward(inode->inputs[0], bwd_a, param_count);
+                shared_ptr<Node> A = inode->inputs[0];
+                // C = contiguous(A)
+                // dC/dA = contiguous(dC) (where dC = bwd_node)
+                auto dC = bwd_node;
+                dC->label = "d" + inode->label;
+
+                shared_ptr<Node> dA = contiguous(dC);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(dA);
+                bwd_a->label = A->label + ".grad";
+                set_grad_and_travers(A, bwd_a, param_count);
+            }
+            break;
+        case OpType::ReLU:
+            {
+                shared_ptr<Node> A = inode->inputs[0];
+                // C = relu(A)
+                // dC/dA = bwd_relu(dC) (where dC = bwd_node)
+                auto dC = bwd_node;
+                dC->label = "d" + inode->label;
+
+                shared_ptr<Node> dA = relu(dC);
+                shared_ptr<InternalNode> bwd_a = static_pointer_cast<InternalNode>(dA);
+                auto A_copy = copy_to_internal_node(A, false, OpType::BwdHelper);
+                bwd_a->num_inputs = 2;
+                bwd_a->inputs[1] = A_copy;
+                bwd_a->op = OpType::BwdReLU;
+
+                set_grad_and_travers(A, bwd_a, param_count);
             }
             break;
         default:
@@ -174,10 +219,9 @@ void _backward(shared_ptr<Node> node)
     cfg.inputs = inputs;
     cfg.label = "BWD GRAPH START";
 
-    shared_ptr<BwdNode> bwd_node = copy_to_bwd_node(cfg);
-    cout<<"bwd_node->label="<<bwd_node->label<<endl;
-    cout<<"bwd_node->op="<<bwd_node->op<<endl;
-    build_backward(node, bwd_node, bwd_node->param_count);
+    shared_ptr<InternalNode> first_grad_node = copy_to_internal_node(cfg);
+    node->grad_node = first_grad_node; // new node is the grad of node
+    build_backward(node, first_grad_node, first_grad_node->param_count);
 }
 
 

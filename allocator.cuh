@@ -8,14 +8,11 @@
 struct Grid;
 
 enum struct OutStatus {BlockFound, BlockNotFound, Success, Error};
-enum struct BlockKind {Data, MetaData};
 
 struct Block 
 {
-    float* d_ptr;
-    int* meta_ptr;
-    size_t size;
-    BlockKind kind = BlockKind::Data;
+    void* d_ptr = nullptr;
+    size_t size = 0;
     Block* next_free = nullptr;
     Grid* mom = nullptr;
 
@@ -31,7 +28,7 @@ struct Grid
     Grid* next_free_grid = nullptr;
     Block blocks[0];
 
-    static Grid* init(int max_blocks_num, int size_per_block, BlockKind kind = BlockKind::Data);
+    static Grid* init(int max_blocks_num, int size_per_block);
 
     OutStatus get_free(Block** dst);
 
@@ -51,7 +48,7 @@ public:
     static MemoryPool& call();
 
     // allocate block on device
-    void allocate(Block** dst, size_t bytes, BlockKind kind = BlockKind::Data);
+    void allocate(Block** dst, size_t bytes);
 
     // releases block on device
     void free(Block* d_ptr);
@@ -67,9 +64,9 @@ private:
     // private constructor
     MemoryPool();
 
-    int pick_grid_tier(size_t bytes, BlockKind kind);
+    int pick_grid_tier(size_t bytes);
 
-    Grid* make_connect_grid(int tier, BlockKind kind);
+    Grid* make_connect_grid(int tier);
 
     // private variables
     Grid* grids[5];
@@ -80,7 +77,6 @@ private:
     static constexpr size_t LARGE_BLOCK  = 1 << 24;  // 16MB
     static constexpr size_t TIER_SIZES[5] = {64, 1<<10, 1<<16, 1<<20, 1<<24};
     static constexpr int BLOCKS_PER_TIER[5] = {64, 256, 128, 64, 32};
-    static constexpr BlockKind BLOCK_KIND[5] = {BlockKind::MetaData, BlockKind::Data, BlockKind::Data, BlockKind::Data, BlockKind::Data};
 };
 
 struct ContentData
@@ -98,30 +94,10 @@ struct ContentData
 
     ~ContentData()
     {
+        // std::cout << "~ContentData: " << this << " b_ptr=" << b_ptr << std::endl;
         if (b_ptr) MemoryPool::call().free(b_ptr);
     }
 
     private:
     void check(void);
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

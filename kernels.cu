@@ -45,4 +45,14 @@ __global__ void expand_last_dim(float* src, float* dst, int last_dim, int n) {
     if (out_idx >= n) return;
     dst[out_idx] = src[out_idx / last_dim];
 }
+
+__global__ void relu(float* input, float* output, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) output[i] = input[i] > 0 ? input[i] : 0;
+}
+
+__global__ void bwd_relu(float* fwd_data, float* prev_grad, float* new_grad, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) new_grad[i] = fwd_data[i] > 0 ? prev_grad[i] : 0;
+}
 }

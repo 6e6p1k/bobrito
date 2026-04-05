@@ -23,14 +23,16 @@ ostream& operator<<(std::ostream& os, const OpType& op)
     switch (op) {
         case OpType::Add:               return os << "+";
         case OpType::Mul:               return os << "*";
-        case OpType::Sum:               return os << "∑";
-        case OpType::Min:               return os << ".min()";
-        case OpType::Max:               return os << ".max()";
+        case OpType::SumLD:               return os << "∑";
+        case OpType::MinLD:               return os << ".min()";
+        case OpType::MaxLD:               return os << ".max()";
         case OpType::MatMul:            return os << "@";
         case OpType::Skip:              return os << ".skip()";
         case OpType::Contiguous:        return os << "~";
         case OpType::Reshape:           return os << "RR";
         case OpType::ExpandLD:          return os << "[ ]";
+        case OpType::ReLU:              return os << "relu";
+        case OpType::BwdReLU:           return os << "bwd_relu";
         default:                        return os << "Unknown";
     }
 }
@@ -40,14 +42,16 @@ string opToString(const OpType& op)
     switch (op) {
         case OpType::Add:           return "+";
         case OpType::Mul:           return "*";
-        case OpType::Sum:           return ".sum()";
-        case OpType::Min:           return ".min()";
-        case OpType::Max:           return ".maxld()";
+        case OpType::SumLD:           return ".sum()";
+        case OpType::MinLD:           return ".min()";
+        case OpType::MaxLD:           return ".maxld()";
         case OpType::MatMul:        return "@";
         case OpType::Skip:          return ".skip()";
         case OpType::Contiguous:    return ".contiguous()";
         case OpType::Reshape:       return ".reshape()";
         case OpType::ExpandLD:      return ".expandld()";
+        case OpType::ReLU:          return ".relu()";
+        case OpType::BwdReLU:       return ".bwd_relu()";
         default:                    return "Unknown";
     }
 }
@@ -98,7 +102,7 @@ ShapePtr make_shape_data(int ndim, int* shape, int* strides)
 //      SourceNode Initializer
 
 float* Node::get_data() { return d_data->data(); }
-float* BwdNode::get_data() { return d_grad->data(); }
+bool Node::is_data_allocated() { return d_data->is_allocated(); }
 
 SourceNode::SourceNode(float* data, int ndim, int* shape, int* strides, bool requires_grad)
 {
@@ -129,7 +133,7 @@ std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node
         node->inputs[i] = inputs[i];
         node->param_count += inputs[i]->param_count;
         // cout<<"Node ["<<inputs[i]->label<<"] has "<<inputs[i]->param_count<<" labels"<<endl;
-        if (inputs[i]->outputs[0] == nullptr) inputs[i]->outputs[0] = node;
+        if (inputs[i]->outputs[0].lock() == nullptr) inputs[i]->outputs[0] = node;
         else inputs[i]->outputs[1] = node;
     }
     return node;
@@ -149,7 +153,7 @@ std::shared_ptr<InternalNode> make_internal_node(InodeConfig cfg)
     {
         node->inputs[i] = cfg.inputs[i];
         node->param_count += cfg.inputs[i]->param_count;
-        if (cfg.inputs[i]->outputs[0] == nullptr) cfg.inputs[i]->outputs[0] = node;
+        if (cfg.inputs[i]->outputs[0].lock() == nullptr) cfg.inputs[i]->outputs[0] = node;
         else cfg.inputs[i]->outputs[1] = node;
     }
     if (cfg.is_param_count()) node->param_count = cfg.param_count;
@@ -158,7 +162,7 @@ std::shared_ptr<InternalNode> make_internal_node(InodeConfig cfg)
     else
     {
         node->d_data = cfg.dst->d_data;
-        node->d_grad = cfg.dst->d_grad;
+        node->grad_node = cfg.dst->grad_node;
         cfg.dst->h_meta = node->h_meta;
     }
     return node;
@@ -173,7 +177,7 @@ std::shared_ptr<InternalNode> make_internal_node_like(InternalNode* example)
     node->num_inputs = example->num_inputs;
     node->h_meta = example->h_meta;
     node->d_data = example->d_data;
-    node->d_grad = example->d_grad;
+    node->grad_node = example->grad_node;
     node->param_count = example->param_count;
     return node;
 }
@@ -189,7 +193,7 @@ std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> exampl
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_data = example->d_data;
-    node->d_grad = example->d_grad;
+    node->grad_node = example->grad_node;
     node->param_count = param_count;
     node->label = example->label + "_copy";
     return node;
@@ -201,7 +205,7 @@ std::shared_ptr<InternalNode> gcopy_to_internal_node(std::shared_ptr<Node> examp
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_data = example->d_data;
-    node->d_grad = example->d_grad;
+    node->grad_node = example->grad_node;
     node->label = example->label + "_grad";
     node->param_count = example->param_count;
     return node;
@@ -213,47 +217,46 @@ std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> exampl
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_data = example->d_data;
-    node->d_grad = example->d_grad;
+    node->grad_node = example->grad_node;
     node->label = example->label + "_copy";
     node->param_count = example->param_count;
     return node;
 }
 
-std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool flipped, bool transposed, OpType op)
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool transposed, OpType op)
 {
     auto node = std::make_shared<InternalNode>();
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_data = example->d_data;
-    node->d_grad = example->d_grad;
+    node->grad_node = example->grad_node;
     node->label = example->label + "_copy";
-    if (flipped) node->flipped = !node->flipped;
     node->transposed = transposed;
     node->param_count = example->param_count;
     node->op = op;
     return node;
 }
 
-std::shared_ptr<BwdNode> copy_to_bwd_node(InodeConfig cfg)
+std::shared_ptr<InternalNode> copy_to_internal_node(InodeConfig cfg)
 {
-    std::shared_ptr<BwdNode> node = std::make_shared<BwdNode>();
+    std::shared_ptr<InternalNode> node = std::make_shared<InternalNode>();
 
     if (cfg.data_copying_required())
     {
         node->kind = cfg.src->kind;
         node->h_meta = cfg.src->h_meta;
-        node->d_data = cfg.src->d_data;
-        node->d_grad = cfg.src->d_grad;
         node->label = cfg.src->label;
         node->param_count = cfg.src->param_count;
-        cout<<"DATA IS COPIED!"<<endl;
+
+        if (cfg.copy_data) node->d_data = cfg.src->d_data;
+        if (cfg.copy_grad) node->grad_node = cfg.src->grad_node;
     }
 
     if (cfg.is_op())
         node->op = cfg.op;
 
     if (cfg.is_label())
-        node->label = cfg.label; cout<<"LABEL IS SET TO: "<<cfg.label<<endl;
+        node->label = cfg.label;
 
 
     if (cfg.is_meta())
@@ -267,7 +270,7 @@ std::shared_ptr<BwdNode> copy_to_bwd_node(InodeConfig cfg)
             node->inputs[i] = cfg.inputs[i];
             node->param_count += cfg.inputs[i]->param_count;
 
-            if (cfg.inputs[i]->outputs[0] == nullptr)
+            if (cfg.inputs[i]->outputs[0].lock() == nullptr)
                 cfg.inputs[i]->outputs[0] = node;
             else
                 cfg.inputs[i]->outputs[1] = node;
@@ -280,32 +283,8 @@ std::shared_ptr<BwdNode> copy_to_bwd_node(InodeConfig cfg)
     if (cfg.data_transfer_required())
     {
         if (cfg.src_d_data) node->d_data = cfg.src_d_data;
-        if (cfg.src_d_grad) node->d_grad = cfg.src_d_grad;
     }
 
-    return node;
-}
-
-std::shared_ptr<BwdNode> internal_to_bwd(shared_ptr<InternalNode> src)
-{
-    std::shared_ptr<BwdNode> node = std::make_shared<BwdNode>();
-    node->op = src->op;
-    node->label = src->label;
-    node->kind = src->kind;
-    node->h_meta = src->h_meta;
-    node->d_data = src->d_data;
-    node->d_grad = src->d_grad;
-    node->param_count = src->param_count;
-    
-    node->num_inputs = src->num_inputs;
-    for (int i = 0; i < src->num_inputs; i++)
-    {
-        node->inputs[i] = src->inputs[i];
-
-        for (int j = 0; j < 4; ++j)
-            if (node->inputs[i]->outputs[j] == src)
-                node->inputs[i]->outputs[j] = node;
-    }
     return node;
 }
 
@@ -315,7 +294,7 @@ std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example)
     node->kind = example->kind;
     node->h_meta = example->h_meta;
     node->d_data = example->d_data;
-    node->d_grad = example->d_grad;
+    node->grad_node = example->grad_node;
     node->h_requiers_grad = example->h_requiers_grad;
     node->param_count = example->param_count;
     return node;
@@ -324,25 +303,17 @@ std::shared_ptr<SourceNode> make_source_node_like(SourceNode* example)
 void prepare_starting_grad(std::shared_ptr<Node> node)
 {
     int seed_size = utils::numel(node->h_meta->ndim, node->h_meta->shape());
-    if (!node->d_grad) node->d_grad = make_shared<ContentData>();
-    node->d_grad->allocate(seed_size);
-    bool _buff = node->flipped;
-    node->flipped = true;
+    if (!node->d_data) node->d_data = make_shared<ContentData>();
+    node->d_data->allocate(seed_size);
     cu_ops::fill(node.get(), 1.0f);
-    node->flipped = false;
-    node->flipped = _buff;
 }
 
 void prepare_starting_grad(std::shared_ptr<InternalNode> node)
 {
     int seed_size = utils::numel(node->h_meta->ndim, node->h_meta->shape());
-    if (!node->d_grad) node->d_grad = make_shared<ContentData>();
-    node->d_grad->allocate(seed_size);
-    bool _buff = node->flipped;
-    node->flipped = true;
+    if (!node->d_data) node->d_data = make_shared<ContentData>();
+    node->d_data->allocate(seed_size);
     cu_ops::fill(node.get(), 1.0f);
-    node->flipped = false;
-    node->flipped = _buff;
 }
 
 void print_node(Node* node)
@@ -376,12 +347,12 @@ void print_node(Node* node)
     }
 
     // handle grad
-    if (!node->d_grad || !node->d_grad->is_allocated()) { cout<<"No grad allocated yet."<<endl; }
+    if (!node->grad_node || !node->grad_node->d_data || !node->grad_node->d_data->is_allocated()) { cout<<"No grad allocated yet."<<endl; }
     else
     {
         int total = node->h_meta->size;
         int limit = total > 20 ? 20 : total;
-        float* h_grad = node->d_grad->d_to_h();
+        float* h_grad = node->grad_node->d_data->d_to_h();
 
         cout<<"Grad: [";
         for (int i = 0; i < limit; ++i)
@@ -418,11 +389,11 @@ std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b,
     return node;
 }
 
-std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, bool keepdims, std::shared_ptr<Node> dst)
+std::shared_ptr<Node> reduce_last_dim(std::shared_ptr<Node> a, OpType op)
 {
-    auto [res_shape, res_ndim] = check_shape_return_out_shape::reduction(
-        a, dim, keepdims
-    );
+    int res_ndim = a->h_meta->ndim - 1;
+    int res_shape[res_ndim];
+    for (int i = 0; i < res_ndim; ++i) res_shape[i] = a->h_meta->shape()[i];
     std::shared_ptr<Node> inputs[] = {a};
     auto node = make_internal_node({
         .op = op,
@@ -430,18 +401,67 @@ std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, boo
         .ndim = res_ndim,
         .inputs = inputs,
         .num_inputs = 1,
-        .dst = dst
     });
-    node->label = a->label + opToString(op); // remove later
+    node->label = "( sum_last_dim" + a->label + " )";
     return node;
+}
+
+std::shared_ptr<Node> reduce(std::shared_ptr<Node> a, int dim, bool keepdims, OpType op)
+{
+    // handle negative indexing
+    int ndim = a->h_meta->ndim;
+    dim = (dim + ndim) % ndim;
+    if (dim > ndim - 1) throw logic_error("Dim wasn't found.");
+
+    if (dim == ndim - 1 && !keepdims) return reduce_last_dim(a, op);
+
+    // 1. reshape, put the dim to the end
+    int* shape_copy = new int[ndim];
+    int val = a->h_meta->shape()[dim];
+    int j = 0;
+    for (int i = 0; i < ndim; ++i)
+        if (i != dim) shape_copy[j++] = a->h_meta->shape()[i];
+    shape_copy[ndim-1] = val;
+
+    std::shared_ptr<Node> reshaped_node = reshape(a, shape_copy, ndim); 
+
+    // 2. make contiguous
+    std::shared_ptr<Node> contiguous_node = contiguous(reshaped_node);
+
+    // 3. perform last dim reduction
+    std::shared_ptr<Node> node_after_sum = reduce_last_dim(contiguous_node, op);
+
+    // 4. if keepdims = True, insert another dim
+    if (keepdims)
+    {
+        int* res_shape = new int[ndim];
+        for (int i = 0; i < ndim; ++i)
+            res_shape[i] = (i == dim) ? 1 : a->h_meta->shape()[i];
+        std::shared_ptr<Node> node = reshape(node_after_sum, res_shape, ndim);
+        return node;
+    }
+    return node_after_sum;
 }
 //      </general operations>
 
 //      <ops>
-std::shared_ptr<Node> add(std::shared_ptr<Node> a, std::shared_ptr<Node> b) { return elemwise(a, b, OpType::Add); }
-std::shared_ptr<Node> mul(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b) { return elemwise(a, b, OpType::Mul); }
-std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims) { return reduction(a, dim, OpType::Max, keepdims); }
-std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims) { return reduction(a, dim, OpType::Min, keepdims); }
+std::shared_ptr<Node> add(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b) 
+{ 
+    return elemwise(a, b, OpType::Add); 
+}
+std::shared_ptr<Node> mul(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b) 
+{ 
+    return elemwise(a, b, OpType::Mul);
+}
+std::shared_ptr<Node> sub(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b)
+{
+    return elemwise(a, b, OpType::Sub);
+}
+std::shared_ptr<Node> div(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b)
+{
+    return elemwise(a, b, OpType::Div);
+}
+
 std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b, std::shared_ptr<Node> dst)
 {
     auto [res_shape, res_ndim] = check_shape_return_out_shape::matmul(a, b);
@@ -457,7 +477,20 @@ std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b, s
     node->label = "(" + a->label + " " + opToString(OpType::MatMul) + " " + b->label + ")"; // remove later
     return node;
 }
-std::shared_ptr<Node> skip(std::shared_ptr<Node> a, std::shared_ptr<Node> dst)
+std::shared_ptr<Node> skip(std::shared_ptr<Node> a)
+{
+    InodeConfig cfg;
+    cfg.op = OpType::Skip;
+    cfg.src = a;
+    cfg.num_inputs = 1;
+    std::shared_ptr<Node> inputs[] = {a};
+    cfg.inputs = inputs;
+    cfg.copy_data = true;
+
+    shared_ptr<Node> node = copy_to_internal_node(cfg);
+    return node;
+}
+std::shared_ptr<Node> copy(std::shared_ptr<Node> a, std::shared_ptr<Node> dst)
 {
     std::shared_ptr<Node> inputs[] = {a};
     auto node = make_internal_node({
@@ -484,7 +517,7 @@ std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a, std::shared_ptr<Node> 
         .num_inputs = 1,
         .dst = dst
     });
-    node->label = "contiguous(" + a->label + ")";
+    node->label = "( contiguous" + a->label + " )";
     return node;
 }
 std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_ndim)
@@ -505,78 +538,38 @@ std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_n
     node->num_inputs = 1;
     node->h_meta = make_shape_data(res_ndim, res_shape, res_strides);
     node->d_data = a->d_data; // data isn't changed (reshape is a view)
-    node->d_grad = a->d_grad;
-    node->label = "reshape(" + a->label + ")";
+    node->grad_node = a->grad_node;
+    node->label = "( reshape" + a->label + " )";
 
     // connect inputs to outputs and vice versa
     for (int i = 0; i < 1; i++)
     {
         node->inputs[i] = inputs[i];
         node->param_count += inputs[i]->param_count;
-        if (inputs[i]->outputs[0] == nullptr) inputs[i]->outputs[0] = node;
+        if (inputs[i]->outputs[0].lock() == nullptr) inputs[i]->outputs[0] = node;
         else inputs[i]->outputs[1] = node;
     }
     return node;
 }
 
-std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a, std::shared_ptr<Node> dst)
-{
-    int res_ndim = a->h_meta->ndim - 1;
-    int res_shape[res_ndim];
-    for (int i = 0; i < res_ndim; ++i) res_shape[i] = a->h_meta->shape()[i];
-    std::shared_ptr<Node> inputs[] = {a};
-    cout<<"NDIM="<<res_ndim<<endl;
-    auto node = make_internal_node({
-        .op = OpType::Sum,
-        .shape = res_shape,
-        .ndim = res_ndim,
-        .inputs = inputs,
-        .num_inputs = 1,
-        .dst = dst
-    });
-    node->label = "sum_last_dim(" + a->label + ")";
-    return node;
-}
-
 std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims)
 {
-    // handle negative indexing
-    int ndim = a->h_meta->ndim;
-    dim = (dim + ndim) % ndim;
-    if (dim > ndim - 1) throw logic_error("Dim wasn't found.");
-    // if (dim == 52)
-    // {
-    //     flatten
-    // }
+    return reduce(a, dim, keepdims, OpType::SumLD);
+}
 
-    if (dim == ndim - 1 && !keepdims) return sum_last_dim(a);
+std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims)
+{
+    return reduce(a, dim, keepdims, OpType::MinLD);
+}
 
-    // 1. reshape, put the dim to the end
-    int* shape_copy = new int[ndim];
-    int val = a->h_meta->shape()[dim];
-    int j = 0;
-    for (int i = 0; i < ndim; ++i)
-        if (i != dim) shape_copy[j++] = a->h_meta->shape()[i];
-    shape_copy[ndim-1] = val;
+std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims)
+{
+    return reduce(a, dim, keepdims, OpType::MaxLD);
+}
 
-    std::shared_ptr<Node> reshaped_node = reshape(a, shape_copy, ndim); 
-
-    // 2. make contiguous
-    std::shared_ptr<Node> contiguous_node = contiguous(reshaped_node);
-
-    // 3. perform last dim reduction
-    std::shared_ptr<Node> node_after_sum = sum_last_dim(contiguous_node);
-
-    // 4. if keepdims = True, insert another dim
-    if (keepdims)
-    {
-        int* res_shape = new int[ndim];
-        for (int i = 0; i < ndim; ++i)
-            res_shape[i] = (i == dim) ? 1 : a->h_meta->shape()[i];
-        std::shared_ptr<Node> node = reshape(node_after_sum, res_shape, ndim);
-        return node;
-    }
-    return node_after_sum;
+std::shared_ptr<Node> argmax(std::shared_ptr<Node> a, int dim, bool keepdims)
+{
+    return reduce(a, dim, keepdims, OpType::ArgMaxLD);
 }
 
 std::shared_ptr<Node> expand_last_dim(std::shared_ptr<Node> a, int* res_shape, int res_ndim, std::shared_ptr<Node> dst)
@@ -598,7 +591,59 @@ std::shared_ptr<Node> expand_last_dim(std::shared_ptr<Node> a, int* res_shape, i
         .num_inputs = 1,
         .dst = dst
     });
-    node->label = "expand_last_dim(" + a->label + ")";
+    node->label = "( expand_last_dim" + a->label + " )";
+    return node;
+}
+
+std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> node, int* target_shape, int target_ndim)
+{
+    int* src_shape = node->h_meta->shape();
+    int src_ndim = node->h_meta->ndim; 
+    
+    if (src_ndim == target_ndim) {
+        bool match = true;
+        for (int i = 0; i < src_ndim; i++)
+            if (src_shape[i] != target_shape[i]) 
+            {
+                match = false; 
+                break; 
+            }
+        if (match) return node;
+    }
+
+    // left-pad target with 1s
+    int pad = src_ndim - target_ndim;
+    
+    // reduce dims from left (extra leading dims)
+    // then reduce any internal broadcast dims
+    auto current = node;
+    
+    // first collapse extra leading dims
+    for (int i = 0; i < pad; i++) {
+        current = sum(current, 0, false);
+    }
+    
+    // now same rank — reduce any remaining broadcast dims (keepdims)
+    for (int i = 0; i < target_ndim; i++) {
+        if (target_shape[i] == 1 && current->h_meta->shape()[i] != 1) {
+            current = sum(current, i, true);
+        }
+    }
+    return current;
+}
+
+std::shared_ptr<Node> relu(std::shared_ptr<Node> a)
+{
+    std::shared_ptr<Node> inputs[] = {a};
+
+    auto node = make_internal_node({
+        .op = OpType::ReLU,
+        .shape = a->h_meta->shape(),
+        .ndim = a->h_meta->ndim,
+        .inputs = inputs,
+        .num_inputs = 1,
+    });
+    node->label = "( relu" + a->label + " )";
     return node;
 }
 //      </ops>
@@ -646,35 +691,13 @@ void build_topo_grad(Node* node, unordered_set<Node*>& visited, vector<Node*>& o
         InternalNode* inode = static_cast<InternalNode*>(node);
         // compute num_outputs
         int num_outputs = 0;
-        while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
+        while (num_outputs < 4 && inode->outputs[num_outputs].lock()) num_outputs++;
         // same but with outputs
-        for (int i = 0; i < num_outputs; i++) build_topo_grad(inode->outputs[i].get(), visited, order);
+        for (int i = 0; i < num_outputs; i++) build_topo_grad(inode->outputs[i].lock().get(), visited, order);
     }
     // cout<<node->label<<" | ";
     order.push_back(node);
 }
-
-void build_topo_grad(BwdNode* node, unordered_set<BwdNode*>& visited, vector<BwdNode*>& order)
-{
-    if (visited.count(node)) return;
-    visited.insert(node);
-
-    if (node->kind == NodeKind::Internal) {
-        // compute num_outputs
-        int num_outputs = 0;
-        while (num_outputs < 4 && node->outputs[num_outputs]) num_outputs++;
-        // same but with outputs
-        for (int i = 0; i < num_outputs; i++) 
-        {
-            BwdNode* n = static_cast<BwdNode*>(node->outputs[i].get());
-            build_topo_grad(n, visited, order);
-            
-        }
-    }
-    // cout<<node->label<<" | ";
-    order.push_back(node);
-}
-
 
 vector<Node*> topo_sort(shared_ptr<InternalNode> node, bool grad)
 {
@@ -700,44 +723,12 @@ vector<Node*> topo_sort(shared_ptr<Node> node, bool grad)
     return order;
 }
 
-vector<BwdNode*> topo_grad_sort(shared_ptr<BwdNode> node)
-{
-    unordered_set<BwdNode*> visited;
-    vector<BwdNode*> order;
-    build_topo_grad(node.get(), visited, order);
-    return order;
-}
-// </Topological sort>
-
-
-void eval(std::shared_ptr<InternalNode> root)
-{
-    // perform topological sort
-    vector<Node*> order = topo_sort(root, false);
-    
-    // walk in order
-    for (Node* node : order)
-    {   
-        // cout<<"Current node: "<<node->label<<endl;
-        if (node->kind == NodeKind::Source) continue;
-
-        InternalNode* inode = static_cast<InternalNode*>(node);
-
-        // allocate memory
-        int size = inode->h_meta->size;
-        if (!inode->d_data) inode->d_data = make_shared<ContentData>();
-        inode->d_data->allocate(size);
-
-        // dispatch
-        op_based_eval(inode);
-    }
-}
-
 void eval(std::shared_ptr<Node> root)
 {
     // perform topological sort
     vector<Node*> order = topo_sort(root, false);
 
+    // cout<<"EVAL LOOP ---------------------------\n";
     // walk in order
     for (Node* node : order)
     {
@@ -750,81 +741,12 @@ void eval(std::shared_ptr<Node> root)
         int size = inode->h_meta->size;
         if (!inode->d_data) inode->d_data = make_shared<ContentData>();
         inode->d_data->allocate(size);
+
+        // cout<<"Node: "<<inode->label<<endl;
+        // cout<<"data allocated: "<<inode->d_data->is_allocated()<<endl;
         
         // dispatch
         op_based_eval(inode);
-    }
-}
-
-void geval(std::shared_ptr<InternalNode> root)
-{
-    // perform topological sort
-    vector<Node*> order = topo_sort(root, true);
-    cout<<"order.size() = "<<order.size()<<endl;
-
-    // fill the root node grad with beer
-    prepare_starting_grad(root);
-    
-    // walk in order
-    for (int i = order.size() - 2; i >= 0; --i)
-    {   
-        cout<<"Current node: "<<order[i]->label<<endl;
-        if (order[i]->kind == NodeKind::Source) continue;
-
-        InternalNode* inode = static_cast<InternalNode*>(order[i]);
-
-        // allocate grad
-        int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
-        if (!inode->d_data) inode->d_data = make_shared<ContentData>();
-        if (!inode->d_grad) inode->d_grad = make_shared<ContentData>();
-        inode->d_data->allocate(size);
-        inode->d_grad->allocate(size);
-        inode->flipped = !inode->flipped;
-        cout<<"flipped="<<inode->flipped<<endl;
-        if (inode->d_grad->is_allocated()) cout<<"grad was allocated"<<endl;
-        
-        // dispatch
-        op_based_eval(inode);
-    }
-}
-
-void geval(std::shared_ptr<Node> root)
-{
-    // perform topological sort
-    vector<Node*> order = topo_sort(root, true);
-
-    // fill the root node grad with beer
-    prepare_starting_grad(root);
-
-    cout<<"GEVAL LOOP: "<<endl;
-    // walk in order
-    for (int i = order.size() - 2; i >= 0; --i)
-    {   
-        if (order[i]->kind == NodeKind::Source) continue;
-
-        InternalNode* inode = static_cast<InternalNode*>(order[i]);
-        
-        // allocate grad
-        int size = utils::numel(inode->h_meta->ndim, inode->h_meta->shape());
-        if (auto* bwd = dynamic_cast<BwdNode*>(order[i])) {
-            if (!inode->d_grad) inode->d_grad = make_shared<ContentData>();
-            inode->d_grad->allocate(size);
-        } else {
-            if (!inode->d_data) inode->d_data = make_shared<ContentData>();
-            inode->d_data->allocate(size);
-        }
-
-        // dispatch
-        cout<<"node: "<<inode->label<<endl;
-        cout << "Type is: " << typeid(order[i]).name() << std::endl;
-        if constexpr (std::is_same_v<decltype(order[i]), BwdNode>) {
-            std::cout << "type is bwd node.\n";
-        }
-        cout<<"flipped: "<<inode->flipped<<endl;
-        cout<<"is_grad: "<<(inode->d_grad && inode->d_grad->is_allocated())<<endl;
-        cout<<"size: "<<(inode->d_data ? inode->d_data->size() : inode->d_grad->size())<<endl;
-        op_based_eval(inode);
-        print_node(inode);
     }
 }
 
@@ -836,7 +758,7 @@ void _geval(std::shared_ptr<Node> root)
     // fill the root node grad with beer
     // prepare_starting_grad(root);
 
-    cout<<"GEVAL LOOP: "<<endl;
+    // cout<<"GEVAL LOOP: ---------------------------------"<<endl;
     // walk in order
     for (int i = order.size() - 2; i >= 0; --i)
     {
@@ -846,27 +768,18 @@ void _geval(std::shared_ptr<Node> root)
 
         // allocate grad
         int size = inode->h_meta->size;
-        if (auto* bwd = dynamic_cast<BwdNode*>(order[i])) {
-            if (!inode->d_grad) inode->d_grad = make_shared<ContentData>();
-            inode->d_grad->allocate(size);
-        } else {
-            if (!inode->d_data) inode->d_data = make_shared<ContentData>();
+        if (!inode->d_data) inode->d_data = make_shared<ContentData>();
             inode->d_data->allocate(size);
-        }
+
 
         // dispatch
-        cout<<"------------------------------------------------"<<endl;
-        cout<<"node: "<<inode->label<<endl;
-        cout << "Type is: " << typeid(order[i]).name() << std::endl;
-        if constexpr (std::is_same_v<decltype(order[i]), BwdNode>) {
-            std::cout << "type is bwd node.\n";
-        }
-        cout<<"flipped: "<<inode->flipped<<endl;
-        cout<<"is_grad: "<<(inode->d_grad && inode->d_grad->is_allocated())<<endl;
-        cout<<"is_data: "<<(inode->d_data && inode->d_data->is_allocated())<<endl;
-        cout<<"size: "<<(inode->h_meta->size)<<endl;
+        // cout<<"------------------------------------------------"<<endl;
+        // cout<<"node: "<<inode->label<<endl;
+        // cout << "Type is: " << typeid(order[i]).name() << std::endl;
+        // cout<<"is_data: "<<(inode->d_data && inode->d_data->is_allocated())<<endl;
+        // cout<<"size: "<<(inode->h_meta->size)<<endl;
         op_based_eval(inode);
-        print_node(inode);
+        // print_node(inode);
     }
 }
 
@@ -875,28 +788,20 @@ void op_based_eval(InternalNode* inode)
     switch (inode->op)
     {
         case OpType::Add:           cu_ops::add(inode);                 return;
+        case OpType::Sub:           cu_ops::sub(inode);                 return;
         case OpType::Mul:           cu_ops::mul(inode);                 return;
+        case OpType::Div:           cu_ops::div(inode);                 return;
         case OpType::MatMul:        cu_ops::matmul(inode);              return;
         case OpType::Contiguous:    cu_ops::contiguous(inode);          return;
-        case OpType::Sum:           cu_ops::reduce_last_dim(inode);     return;
+        case OpType::SumLD:         cu_ops::sum_last_dim(inode);        return;
+        case OpType::MinLD:         cu_ops::min_last_dim(inode);        return;
+        case OpType::ArgMaxLD:      cu_ops::argmax_last_dim(inode);     return;
         case OpType::ExpandLD:      cu_ops::expand_last_dim(inode);     return;
         case OpType::BwdStart:      cu_ops::fill(inode, 1.0f);          return;
+        case OpType::Skip:          return;
         case OpType::Reshape:       return; // no-op: shares d_content with input, data unchanged
-        default:                    return;
-    }
-}
-
-void op_based_eval(BwdNode* inode)
-{
-    switch (inode->op)
-    {
-        case OpType::Add:           cu_ops::add(inode);                 return;
-        case OpType::Mul:           cu_ops::mul(inode);                 return;
-        case OpType::MatMul:        cu_ops::matmul(inode);              return;
-        case OpType::Contiguous:    cu_ops::contiguous(inode);          return;
-        case OpType::Sum:           cu_ops::reduce_last_dim(inode);     return;
-        case OpType::ExpandLD:      cu_ops::expand_last_dim(inode);     return;
-        case OpType::Reshape:       return; // no-op: shares d_content with input, data unchanged
+        case OpType::ReLU:          cu_ops::relu(inode);                return;
+        case OpType::BwdReLU:       cu_ops::bwd_relu(inode);            return;
         default:                    return;
     }
 }

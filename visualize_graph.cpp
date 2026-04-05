@@ -27,7 +27,7 @@ void print_all_nodes_grads(vector<Node*> nodes)
     cout<<"Source nodes: "<<endl;
     for (int i = 0; i < nodes.size(); ++i)
     {
-        auto h_grad = nodes[i]->d_grad->d_to_h();
+        auto h_grad = nodes[i]->grad_node->d_data->d_to_h();
         cout<<"Node "<<nodes[i]->label<<" grad: "<<h_grad[0]<<endl;
     } 
 }

@@ -34,10 +34,11 @@ static const char* op_symbol(OpType op) {
         case OpType::Add:           return "+";
         case OpType::Mul:           return "✕";
         case OpType::MatMul:        return "@";
-        case OpType::Sum:           return "Σ";
-        case OpType::Max:           return "↑";
-        case OpType::Min:           return "↓";
+        case OpType::SumLD:         return "Σ";
+        case OpType::MaxLD:         return "↑";
+        case OpType::MinLD:         return "↓";
         case OpType::ReLU:          return " ";
+        case OpType::BwdReLU:       return " ";
         case OpType::Skip:          return "→";
         case OpType::BwdStart:      return "▲";
         case OpType::BwdHelper:     return "↺";
@@ -53,10 +54,11 @@ static const char* op_name(OpType op) {
         case OpType::Add:           return "Add";
         case OpType::Mul:           return "Mul";
         case OpType::MatMul:        return "MatMul";
-        case OpType::Sum:           return "Sum";
-        case OpType::Max:           return "Max";
-        case OpType::Min:           return "Min";
+        case OpType::SumLD:         return "Sum";
+        case OpType::MaxLD:         return "Max";
+        case OpType::MinLD:         return "Min";
         case OpType::ReLU:          return "ReLU";
+        case OpType::BwdReLU:       return "BwdReLU";
         case OpType::Skip:          return "Skip";
         case OpType::BwdStart:      return "BwdStart";
         case OpType::BwdHelper:     return "BwdHelper";
@@ -502,12 +504,12 @@ static void draw_backward_node(Node* node, const string& prefix, bool is_last, b
         string child_prefix = (is_root ? prefix : connector_prefix) + "   ";
 
         int num_outputs = 0;
-        while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
+        while (num_outputs < 4 && inode->outputs[num_outputs].lock()) num_outputs++;
 
         for (int i = 0; i < num_outputs; i++) {
             bool last_child = (i == num_outputs - 1);
             cout << child_prefix << (last_child ? "  " : "│ ") << endl;
-            draw_backward_node(inode->outputs[i].get(), child_prefix, last_child, false);
+            draw_backward_node(inode->outputs[i].lock().get(), child_prefix, last_child, false);
         }
     }
 }
@@ -545,13 +547,13 @@ static void dot_emit_backward_node(ofstream& out, Node* node, unordered_set<Node
             << "    ];\n";
 
         int num_outputs = 0;
-        while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
+        while (num_outputs < 4 && inode->outputs[num_outputs].lock()) num_outputs++;
 
         for (int i = 0; i < num_outputs; i++) {
-            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
+            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].lock().get());
             out << "    " << id << " -> " << child_id
                 << " [color=\"#666666\" penwidth=1.5 arrowsize=0.8];\n";
-            dot_emit_backward_node(out, inode->outputs[i].get(), visited);
+            dot_emit_backward_node(out, inode->outputs[i].lock().get(), visited);
         }
     } else {
         SourceNode* snode = static_cast<SourceNode*>(node);
@@ -636,7 +638,6 @@ static void dot_emit_node_label(ofstream& out, Node* node) {
             << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">param_count = </FONT>"
             << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#0091ff\">" <<node->param_count<< "</FONT></TD></TR>"
             
-            << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">flipped = </FONT>"     << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ff00c8\">" <<(node->flipped ? "true" : "false")    << "</FONT></TD></TR>"
             << "<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ffffff\">transposed = </FONT>"  << "<FONT FACE=\"iA Writer Mono S\" POINT-SIZE=\"14\" COLOR=\"#ff00c8\">" <<(node->transposed ? "true" : "false") << "</FONT></TD></TR>"
             << "</TABLE>>\n"
             << "        shape=box style=\"rounded\" width=0 height=0 margin=\"0.1\" \n"
@@ -704,24 +705,24 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
 
         // follow outputs
         int num_outputs = 0;
-        while (num_outputs < 4 && inode->outputs[num_outputs]) num_outputs++;
+        while (num_outputs < 4 && inode->outputs[num_outputs].lock()) num_outputs++;
         for (int i = 0; i < num_outputs; i++) {
-            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].get());
+            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].lock().get());
             out << "    " << id << " -> " << child_id
                 << " [color=\"#00ffff\" penwidth=3 arrowsize=1.2];\n";
-            dot_emit_node_full(out, inode->outputs[i].get(), visited_nodes, visited_edges);
+            dot_emit_node_full(out, inode->outputs[i].lock().get(), visited_nodes, visited_edges);
         }
     } else {
         SourceNode* snode = static_cast<SourceNode*>(node);
 
         // follow outputs from source too
         int num_outputs = 0;
-        while (num_outputs < 4 && snode->outputs[num_outputs]) num_outputs++;
+        while (num_outputs < 4 && snode->outputs[num_outputs].lock()) num_outputs++;
         for (int i = 0; i < num_outputs; i++) {
-            string child_id = "n" + to_string((uintptr_t)snode->outputs[i].get());
+            string child_id = "n" + to_string((uintptr_t)snode->outputs[i].lock().get());
             out << "    " << id << " -> " << child_id
                 << " [color=\"#00ffff\" penwidth=3 arrowsize=1.2];\n";
-            dot_emit_node_full(out, snode->outputs[i].get(), visited_nodes, visited_edges);
+            dot_emit_node_full(out, snode->outputs[i].lock().get(), visited_nodes, visited_edges);
         }
     }
 }

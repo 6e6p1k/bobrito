@@ -154,8 +154,11 @@ pair<int*, int> matmul(int* a_shape, int* b_shape, int a_ndim, int b_ndim) {
     if (!(a_ndim >= 2 && b_ndim >= 2))
         throw std::logic_error("Tensors rank should be at least 2.");
     if (a_shape[a_ndim - 1] != b_shape[b_ndim - 2])
+    {    
+        // cout<<"k-dim of A: "<<a_shape[a_ndim - 1]<<endl;
+        // cout<<"k-dim of B: "<<b_shape[a_ndim - 2]<<endl;
         throw std::logic_error("k dimensions don't match.");
-
+    }
     int out_ndim = max(a_ndim, b_ndim);
     int* res_shape = new int[out_ndim];
 
