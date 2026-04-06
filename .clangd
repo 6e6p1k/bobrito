@@ -1,0 +1,7 @@
+CompileFlags:
+  Add:
+    - "-std=c++17"
+    - "-Isrc"
+    - "[-I/home/hz/miniforge3/envs/main/include/python3.11 -I/home/hz/miniforge3/envs/main/lib/python3.11/site-packages/pybind11/include]"
+    - "-I/home/hz/miniforge3/envs/main/include/python3.11"
+    - "-I/home/hz/miniforge3/envs/main/lib/python3.11/site-packages/pybind11/include"

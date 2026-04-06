@@ -3,6 +3,7 @@
 #include <cstring>
 #include "utils.h"
 #include "node.h"
+#include "node_helpers.h"
 
 using namespace std;
 namespace utils 

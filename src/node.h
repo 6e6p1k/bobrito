@@ -71,8 +71,10 @@ std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b,
 std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, bool keepdims, std::shared_ptr<Node> dst = nullptr);
 //      </general operations>
 
-std::shared_ptr<Node> add(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
-std::shared_ptr<Node> mul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
+std::shared_ptr<Node> add(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b);
+std::shared_ptr<Node> sub(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b);
+std::shared_ptr<Node> mul(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b);
+std::shared_ptr<Node> div(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b);
 std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
 std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
 std::shared_ptr<Node> argmax(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);

@@ -547,7 +547,6 @@ void op_based_eval(InternalNode* inode)
         case OpType::Contiguous:    cu_ops::contiguous(inode);          return;
         case OpType::SumLD:         cu_ops::sum_last_dim(inode);        return;
         case OpType::MinLD:         cu_ops::min_last_dim(inode);        return;
-        case OpType::ArgMaxLD:      cu_ops::argmax_last_dim(inode);     return;
         case OpType::ExpandLD:      cu_ops::expand_last_dim(inode);     return;
         case OpType::BwdStart:      cu_ops::fill(inode, 1.0f);          return;
         case OpType::Skip:          return;

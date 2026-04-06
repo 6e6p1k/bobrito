@@ -74,9 +74,9 @@ static const char* op_color(OpType op) {
         case OpType::Add:       return clr::bcyan;
         case OpType::Mul:       return clr::bmagenta;
         case OpType::MatMul:    return clr::bblue;
-        case OpType::Sum:       return clr::byellow;
-        case OpType::Max:       return clr::bred;
-        case OpType::Min:       return clr::bgreen;
+        case OpType::SumLD:       return clr::byellow;
+        case OpType::MaxLD:       return clr::bred;
+        case OpType::MinLD:       return clr::bgreen;
         case OpType::ReLU:      return clr::byellow;
         case OpType::Skip:      return clr::bblue;
         case OpType::BwdStart:  return clr::gray;
@@ -264,9 +264,9 @@ static const char* dot_op_color(OpType op) {
         case OpType::Add:    return "#4FC3F7";
         case OpType::Mul:    return "#CE93D8";
         case OpType::MatMul: return "#90CAF9";
-        case OpType::Sum:    return "#FFD54F";
-        case OpType::Max:    return "#EF9A9A";
-        case OpType::Min:    return "#A5D6A7";
+        case OpType::SumLD:    return "#FFD54F";
+        case OpType::MaxLD:    return "#EF9A9A";
+        case OpType::MinLD:    return "#A5D6A7";
         case OpType::ReLU:   return "#FFCC80";
     }
     return "#EEEEEE";

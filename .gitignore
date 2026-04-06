@@ -80,3 +80,6 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# pictures, .dot outputs
+out/

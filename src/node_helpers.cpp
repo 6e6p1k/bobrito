@@ -1,6 +1,7 @@
 #include <ostream>
 #include <memory>
 #include <string>
+#include <vector>
 #include "allocator.cuh"
 #include "node.h"
 #include "node_helpers.h"
@@ -18,7 +19,25 @@ std::shared_ptr<SourceNode> make_filled_source_node(int* shape, int ndim, float 
     node->label = label;
     // fill 
     cu_ops::fill(node.get(), value);
+    return node;
+}
 
+std::shared_ptr<SourceNode> make_filled_source_node(std::vector<int> vec_shape, int ndim, float value, bool requires_grad, std::string label)
+{
+    std::shared_ptr<SourceNode> node = std::make_shared<SourceNode>();
+    node->kind = NodeKind::Source;
+    node->h_requiers_grad = requires_grad;
+    node->d_data = std::make_shared<ContentData>();
+
+    // convert to array bc make_shape_data only receives cpp arrays
+    int* shape = new int[vec_shape.size()];
+    for (int i = 0; i < vec_shape.size(); ++i)
+        shape[i] = vec_shape[i];
+
+    node->h_meta = make_shape_data(ndim, shape);
+    node->label = label;
+    // fill 
+    cu_ops::fill(node.get(), value);
     return node;
 }
 

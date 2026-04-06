@@ -61,6 +61,7 @@ struct InodeConfig {
     }
 };
 std::shared_ptr<SourceNode> make_filled_source_node(int* shape, int ndim, float value, bool requires_grad = false, std::string label = "");
+std::shared_ptr<SourceNode> make_filled_source_node(std::vector<int> vec_shape, int ndim, float value, bool requires_grad = false, std::string label = "");
 std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides = nullptr, int param_count = 0);
 std::shared_ptr<InternalNode> make_internal_node(InodeConfig cfg);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
