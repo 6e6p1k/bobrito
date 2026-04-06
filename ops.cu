@@ -54,7 +54,7 @@ void sub(InternalNode* res_node)
 
     int gridDim = (n + 255) / 256;
     int blockDim = 256;
-    kernels::elemwise<cuAdd><<<gridDim, blockDim>>>(a_data, b_data, res_data, info);
+    kernels::elemwise<cuSub><<<gridDim, blockDim>>>(a_data, b_data, res_data, info);
     // CUDA_CHECK();
 }
 
@@ -68,7 +68,7 @@ void mul(InternalNode* res_node)
 
     int gridDim = (n + 255) / 256;
     int blockDim = 256;
-    kernels::elemwise<cuSub><<<gridDim, blockDim>>>(a_data, b_data, res_data, info);
+    kernels::elemwise<cuMul><<<gridDim, blockDim>>>(a_data, b_data, res_data, info);
     // CUDA_CHECK();
 }
 

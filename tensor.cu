@@ -1,8 +1,8 @@
-
 #include "node.h"
 #include "backward.h"
 #include "ops.cuh"
 #include "utils.h"
+#include <memory>
 
 
 class Tensor {
@@ -20,6 +20,10 @@ public:
         int size = utils::numel(ndim, shape.data());
         snode->d_data->allocate(size);
         node = snode;
+    }
+
+    Tensor(std::shared_ptr<Node> node) {
+        node = node;
     }
 
     Tensor(std::shared_ptr<Node> n) : node(n) {}
