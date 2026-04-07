@@ -15,19 +15,20 @@ static int passed = 0;
 static int failed = 0;
 
 void check_grad(const char* name, Node* node, float expected, int expected_size) {
-    if (!node->grad_node) {
+    auto grad = node->grad_node.lock();
+    if (!grad) {
         cout << "  FAIL " << name << ": grad_node is null" << endl;
         failed++;
         return;
     }
-    if (!node->grad_node->d_data || !node->grad_node->d_data->is_allocated()) {
+    if (!grad->d_data || !grad->d_data->is_allocated()) {
         cout << "  FAIL " << name << ": grad not allocated" << endl;
         failed++;
         return;
     }
 
-    float* h_grad = node->grad_node->d_data->d_to_h();
-    int size = node->grad_node->d_data->size();
+    float* h_grad = grad->d_data->d_to_h();
+    int size = grad->d_data->size();
 
     if (size != expected_size) {
         cout << "  FAIL " << name << ": expected size " << expected_size << " got " << size << endl;

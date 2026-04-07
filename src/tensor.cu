@@ -50,7 +50,7 @@
     }
 
     Tensor Tensor::operator/(const Tensor& other) {
-        return Tensor(::mul(node, other.node));
+        return Tensor(::div(node, other.node));
     }
 
     Tensor Tensor::relu() {
@@ -98,16 +98,11 @@
             std::shared_ptr<SourceNode> snode = std::static_pointer_cast<SourceNode>(node);
             snode->h_requiers_grad = requires_grad;
         }
-        throw std::logic_error("You can't assign requires_grad to an intermediate result.");
+        else throw std::logic_error("You can't assign requires_grad to an intermediate result.");
     }
 
     void Tensor::sync(void) {
         cudaDeviceSynchronize();
-    }
-
-    void Tensor::zero_grad(void)
-    {
-        node->grad_node = nullptr;
     }
 
     std::string Tensor::shape_to_string(void) const

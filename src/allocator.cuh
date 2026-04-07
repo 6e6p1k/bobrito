@@ -23,6 +23,7 @@ struct Block
 struct Grid
 {
     int max_blocks_num;
+    int blocks_in_use = 0;
     bool is_free = true;
     Block* next_free_block = nullptr;
     Grid* next_free_grid = nullptr;
@@ -43,9 +44,15 @@ struct Grid
 
 class MemoryPool 
 {
+    int total_allocations = 0;
+    size_t total_bytes_in_use = 0;
+
 public:
     // access
     static MemoryPool& call();
+
+    // debugging
+    std::string stats(void);
 
     // allocate block on device
     void allocate(Block** dst, size_t bytes);

@@ -404,6 +404,17 @@ void bwd_relu(InternalNode* res_node)
     kernels::bwd_relu<<<gridDim, blockDim>>>(fwd_data, prev_grad, new_grad, size);
     // CUDA_CHECK();
 }
+
+void sgd(SourceNode* snode, float lr)
+{
+    float* grad_data = snode->grad_node.lock()->get_data();
+    float* weight_data = snode->get_data();
+    int size = snode->h_meta->size;
+    
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+    kernels::sgd<<<gridDim, blockDim>>>(weight_data, grad_data, lr, size);
+}
 }
 
 // __global__ void contiguous(float* src, float* dst, int* shape, int* strides, int ndim, int size);

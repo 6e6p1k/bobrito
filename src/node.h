@@ -39,7 +39,7 @@ struct Node
     NodeKind kind;
     ShapePtr h_meta;       // shape, strides, ndim on host (shareable between fwd/bwd nodes)
     ContentPtr d_data;     // forward values on device
-    std::shared_ptr<Node> grad_node;     // gradient on device
+    std::weak_ptr<Node> grad_node;     // gradient on device
     bool transposed = false;
     int param_count = 0;
     std::string label; // just to test, remove later
@@ -53,6 +53,7 @@ struct Node
 struct SourceNode : Node
 {
     bool h_requiers_grad = false;
+    std::shared_ptr<Node> owned_grad;  // keeps grad graph alive for source nodes
     SourceNode() = default;
     SourceNode(float* data, int ndim, int* shape, int* strides = nullptr, bool requires_grad = false);
 };
@@ -105,3 +106,4 @@ void eval(std::shared_ptr<Node> root);
 void geval(std::shared_ptr<InternalNode> root);
 void geval(std::shared_ptr<Node> root);
 void _geval(std::shared_ptr<Node> root);
+void clear_grads(std::shared_ptr<Node> root);

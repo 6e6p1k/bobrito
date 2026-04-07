@@ -70,6 +70,7 @@ OutStatus Grid::get_free(Block** dst)
     Block* next = next_free_block->next_free;
     *dst = curr;
     next_free_block = next;
+    blocks_in_use++;
     if (next_free_block == nullptr) is_free = false;
     return OutStatus::BlockFound;
 }
@@ -79,6 +80,7 @@ void Grid::free_block(Block* block)
     block->next_free = next_free_block;  // point to current head
     next_free_block = block;             // become new head
     is_free = true;
+    blocks_in_use--;
 }
 
 OutStatus Grid::free_grid(void)
@@ -117,21 +119,31 @@ MemoryPool& MemoryPool::call() {
     return instance;
 }
 
+// in MemoryPool
+std::string MemoryPool::stats() {
+    return "used: " + std::to_string(total_allocations) + ", bytes used: " + std::to_string(total_bytes_in_use);
+}
+
+
 void MemoryPool::free(Block* b_ptr)
 {
     b_ptr->mom->free_block(b_ptr);
+
+    // for stats & debugging purposes
+    total_allocations--;
+    total_bytes_in_use -= b_ptr->size;
 }
 
-// remove all allocations 
+
 OutStatus MemoryPool::reset(void) 
 {
+    // Resets all allocations and allocates new starting pack of grids. 
     for (int i = 0; i < 5; ++i)
     {
         if (grids[i]->free_grid() != OutStatus::Success) return OutStatus::Error;
         grids[i] = Grid::init(BLOCKS_PER_TIER[i], TIER_SIZES[i]);
     }
     return OutStatus::Success;
-
 }
 
 void MemoryPool::allocate(Block** dst, size_t bytes) {
@@ -142,13 +154,22 @@ void MemoryPool::allocate(Block** dst, size_t bytes) {
         if (grid->is_free)
         {
             OutStatus status = grid->get_free(dst);
+
+            // for stats & debugging purposes
+            total_allocations++;
+            total_bytes_in_use += TIER_SIZES[tier];
+            
             return;
         }
         grid = grid->next_free_grid;
     }
     // not free grids -> make a new one
     grid = make_connect_grid(tier);
-    OutStatus status = grid->get_free(dst);    
+    OutStatus status = grid->get_free(dst);
+    
+    // for stats & debugging purposes
+    total_allocations++;
+    total_bytes_in_use += TIER_SIZES[tier];
 }
 
 // private constructor

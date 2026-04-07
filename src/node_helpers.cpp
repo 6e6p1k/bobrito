@@ -17,7 +17,8 @@ std::shared_ptr<SourceNode> make_filled_source_node(int* shape, int ndim, float 
     node->d_data = std::make_shared<ContentData>();
     node->h_meta = make_shape_data(ndim, shape);
     node->label = label;
-    // fill 
+    // allocate & fill
+    node->d_data->allocate(node->h_meta->size); 
     cu_ops::fill(node.get(), value);
     return node;
 }
@@ -36,7 +37,8 @@ std::shared_ptr<SourceNode> make_filled_source_node(std::vector<int> vec_shape, 
 
     node->h_meta = make_shape_data(ndim, shape);
     node->label = label;
-    // fill 
+    // allocate & fill
+    node->d_data->allocate(node->h_meta->size); 
     cu_ops::fill(node.get(), value);
     return node;
 }
@@ -203,12 +205,13 @@ void print_node(Node* node)
     }
 
     // handle grad
-    if (!node->grad_node || !node->grad_node->d_data || !node->grad_node->d_data->is_allocated()) { cout<<"No grad allocated yet."<<endl; }
+    auto grad = node->grad_node.lock();
+    if (!grad || !grad->d_data || !grad->d_data->is_allocated()) { cout<<"No grad allocated yet."<<endl; }
     else
     {
         int total = node->h_meta->size;
         int limit = total > 20 ? 20 : total;
-        float* h_grad = node->grad_node->d_data->d_to_h();
+        float* h_grad = grad->d_data->d_to_h();
 
         cout<<"Grad: [";
         for (int i = 0; i < limit; ++i)

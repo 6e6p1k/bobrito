@@ -502,6 +502,17 @@ void eval(std::shared_ptr<Node> root)
     }
 }
 
+void clear_grads(std::shared_ptr<Node> root)
+{
+    vector<Node*> order = topo_sort(root, false);
+    // walk in order
+    for (Node* node : order) 
+    {
+        node->grad_node.reset();
+        if (node->kind == NodeKind::Source) static_cast<SourceNode*>(node)->owned_grad.reset();
+    }
+}
+
 void _geval(std::shared_ptr<Node> root)
 {
     // perform topological sort
@@ -520,10 +531,13 @@ void _geval(std::shared_ptr<Node> root)
 
         // allocate grad
         int size = inode->h_meta->size;
-        if (!inode->d_data) inode->d_data = make_shared<ContentData>();
-            inode->d_data->allocate(size);
-
-
+        if (!(inode->d_data)) 
+        {
+            // cout<<"Not allocated\n";
+            inode->d_data = make_shared<ContentData>();
+        } 
+        // else if (inode->d_data) cout<<"ContentData is already specified.";
+        inode->d_data->allocate(size);
         // dispatch
         // cout<<"------------------------------------------------"<<endl;
         // cout<<"node: "<<inode->label<<endl;

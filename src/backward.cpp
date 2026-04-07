@@ -5,21 +5,44 @@
 #include <unordered_set>
 #include "backward.h"
 #include <vector>
+#include "allocator.cuh"
 #include "node_helpers.h"
 #include "node.h"
 
 using namespace std;
 
 void set_grad_and_travers(std::shared_ptr<Node> fwd_node, std::shared_ptr<Node> new_grad, int param_count) {
-    if (fwd_node->grad_node) {
+    if (fwd_node->grad_node.lock()) {
         // chagne old labels
-        fwd_node->grad_node->label = fwd_node->label + ".partial_grad";
+        fwd_node->grad_node.lock()->label = fwd_node->label + ".partial_grad";
         new_grad->label = fwd_node->label + ".partial_grad";
+
         // accumulate grad
-        fwd_node->grad_node = add(fwd_node->grad_node, new_grad);
-        fwd_node->grad_node->label = fwd_node->label + ".grad";
+        auto accumulated = add(fwd_node->grad_node.lock(), new_grad);
+        accumulated->label = fwd_node->label + ".grad";
+        
+        fwd_node->grad_node = accumulated;
+        // if (fwd_node->kind == NodeKind::Source) static_cast<SourceNode*>(fwd_node.get())->owned_grad = accumulated;
+        if (fwd_node->kind == NodeKind::Source)
+        {
+            auto owned_grad = static_pointer_cast<InternalNode>(skip(accumulated));
+            owned_grad->num_inputs = 0;
+            owned_grad->inputs[0] = nullptr;
+            // owned_grad->d_data = make_shared<ContentData>();
+            static_cast<SourceNode*>(fwd_node.get())->owned_grad = owned_grad;
+        }
     } else {
+
         fwd_node->grad_node = new_grad;
+        if (fwd_node->kind == NodeKind::Source)
+        {
+            auto owned_grad = static_pointer_cast<InternalNode>(skip(new_grad));
+            owned_grad->num_inputs = 0;
+            owned_grad->inputs[0] = nullptr;
+            // owned_grad->d_data = make_shared<ContentData>();
+            static_cast<SourceNode*>(fwd_node.get())->owned_grad = owned_grad;
+        }
+        // if (fwd_node->kind == NodeKind::Source) static_cast<SourceNode*>(fwd_node.get())->owned_grad = new_grad;
         build_backward(fwd_node, std::static_pointer_cast<InternalNode>(new_grad), param_count);
     }
 }

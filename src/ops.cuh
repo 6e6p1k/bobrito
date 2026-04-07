@@ -24,6 +24,7 @@ void sum_last_dim(InternalNode* res_node);
 void max_last_dim(InternalNode* res_node);
 void min_last_dim(InternalNode* res_node);
 void argmax_last_dim(InternalNode* res_node);
+void sgd(SourceNode* snode, float lr);
 
 // float* matmul_cuda_launch(const float* A, const float* B, int batch, int M, int N, int K);
 

@@ -1,8 +1,10 @@
+#include <memory>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 #include "../src/tensor.cuh"
 #include "../src/bobr.cuh"
+#include "node.h"
 
 namespace py = pybind11;
 
@@ -12,7 +14,7 @@ namespace py = pybind11;
     //         throw std::runtime_error("No data available");
 
     //     int ndim = node->h_meta->ndim;
-    //     int* shape = node->h_meta->shape();
+    //     intstea* shape = node->h_meta->shape();
     //     int size = node->h_meta->size;
     //     float* h = node->d_data->d_to_h();
 
@@ -51,7 +53,7 @@ namespace py = pybind11;
 py::array_t<float> data_to_pyarray(Tensor t)
 {
     if (!t.node->is_data_allocated())
-        throw std::runtime_error("No data available");
+        t.evaluate();
 
     int ndim = t.node->h_meta->ndim;
     int* shape = t.node->h_meta->shape();
@@ -130,7 +132,6 @@ PYBIND11_MODULE(bobr, m) {
         .def("geval", &Tensor::geval)
         .def("build_backward", &Tensor::build_backward)
         .def("sync", &Tensor::sync)
-        .def("zero_grad", &Tensor::zero_grad)
 
         // __OPS__
         .def("__add__", &Tensor::operator+)
@@ -146,9 +147,18 @@ PYBIND11_MODULE(bobr, m) {
 
         // Tensor.grad
         .def_property_readonly("grad", [](const Tensor &t) {
-            if (!t.node->grad_node)
+            if (t.node->grad_node.expired())
                 throw std::runtime_error("No grad available");
             return data_to_pyarray(t);
+        })
+
+        .def_property_readonly("requires_grad", [](const Tensor &t) {
+            if (t.node->kind == NodeKind::Source)
+            {
+                auto snode = std::static_pointer_cast<SourceNode>(t.node);
+                return snode->h_requiers_grad;
+            }
+            return false;
         })
         
         .def_property("label", &Tensor::get_label, &Tensor::set_label)
@@ -160,18 +170,36 @@ PYBIND11_MODULE(bobr, m) {
             std::string shape = t.shape_to_string();
             std::ostringstream oss;
 
-            oss << "Tensor(shape = " << shape << "data = \n" << py::str(data) << ")";
+            oss << "Tensor(shape = " << shape << ", data = \n" << py::str(data) << ")";
             return oss.str();
         });
 
-    // FREE FUNCTIONS
-    m.def("full", &bobr::full);
-    m.def("ones", &bobr::ones);
-    m.def("zeros", &bobr::zeros);
+    // SGD
+    py::class_<SGD>(m, "SGD")
+        .def(py::init([](std::vector<Tensor> tensors, float lr) {
+            std::vector<std::shared_ptr<SourceNode>> params;
+            for (auto& t : tensors) {
+                auto snode = std::dynamic_pointer_cast<SourceNode>(t.node);
+                if (!snode) throw std::runtime_error("Parameter must be a source tensor");
+                params.push_back(snode);
+            }
+            return SGD(params, lr);
+        }), py::arg("params"), py::arg("lr") = 0.01)
+        .def("step", &SGD::apply)
+        .def("zero_grad", &SGD::zero_grad);
 
-    m.def("full_like", &bobr::full_like);
-    m.def("ones_like", &bobr::ones_like);
-    m.def("zeros_like", &bobr::ones_like);
+    // FREE FUNCTIONS
+    m.def("full", &bobr::full, py::arg("shape"), py::arg("val"), py::arg("requires_grad") = false);
+    m.def("ones", &bobr::ones, py::arg("shape"), py::arg("requires_grad") = false);
+    m.def("zeros", &bobr::zeros, py::arg("shape"), py::arg("requires_grad") = false);
+
+    m.def("full_like", &bobr::full_like, py::arg("tensor"), py::arg("value"));
+    m.def("ones_like", &bobr::ones_like, py::arg("tensor"));
+    m.def("zeros_like", &bobr::zeros_like, py::arg("tensor"));
+
+    m.def("memdata", &bobr::get_allocation_stats);
+    m.def("memreset", &bobr::reset_memory_pool, "Lowk clears cache.");
+    m.def("clear_grads", &bobr::clear_graph);
 }
 
 // nvcc -shared -std=c++17 -Xcompiler -fPIC     $(python3 -m pybind11 --includes)     -I..     bindings.cu ../ops.cu ../allocator.cu ../kernels.cu ../utils.cpp ../node.cpp ../backward.cpp ../graph_viz.cpp ../visualize_graph.cpp     -o bobr$(python3-config --extension-suffix)     -lcublas

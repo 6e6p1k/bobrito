@@ -1,3 +1,4 @@
+#include "allocator.cuh"
 #include "node.h"
 #include "node_helpers.h"
 #include "tensor.cuh"
@@ -9,6 +10,7 @@ namespace bobr
 Tensor full(std::vector<int> shape, float val, bool requires_grad)
 {
     std::shared_ptr<SourceNode> snode = make_filled_source_node(shape, shape.size(), val);
+    snode->h_requiers_grad = requires_grad;
     return Tensor(snode);
 }
 
@@ -39,5 +41,14 @@ Tensor ones_like(Tensor t)
 Tensor zeros_like(Tensor t)
 { return full_like(t, 0.0f); }
 
+std::string get_allocation_stats()
+{ return MemoryPool::call().stats(); }
 
+void reset_memory_pool()
+{ MemoryPool::call().reset(); }
+
+void clear_graph(Tensor t)
+{
+    clear_grads(t.node);
+}
 }

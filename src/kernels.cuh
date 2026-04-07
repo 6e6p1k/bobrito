@@ -33,5 +33,6 @@ __global__ void reduction_offsets(int* offsets, int last_dim, int num_segments);
 __global__ void expand_last_dim(float* src, float* dst, int last_dim, int n);
 __global__ void relu(float* src, float* dst, int n);
 __global__ void bwd_relu(float* fwd_data, float* prev_grad, float* new_grad, int n);
+__global__ void sgd(float* weight_data, float* grad_data, float lr, int n);
 }
 
