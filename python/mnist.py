@@ -25,10 +25,10 @@ out_dim = 10
 # ============ Init weights ============
 np.random.seed(42)
 
-W1 = bobr.Tensor(np.random.randn(in_dim, hidden).astype(np.float32) * 0.01, True)
-b1 = bobr.zeros([1, hidden], True)
-W2 = bobr.Tensor(np.random.randn(hidden, out_dim).astype(np.float32) * 0.01, True)
-b2 = bobr.zeros([1, out_dim], True)
+W1 = bobr.Tensor(np.random.randn(in_dim, hidden).astype(np.float32) * 0.01, True);  W1.label = "W1"
+b1 = bobr.zeros([1, hidden], True);                                                 b1.label = "b1"
+W2 = bobr.Tensor(np.random.randn(hidden, out_dim).astype(np.float32) * 0.01, True); W2.label = "W2"
+b2 = bobr.zeros([1, out_dim], True);                                                b2.label = "b2"
 
 # for idx, param in enumerate([W1, b1, W2, b2]):
 #     print(f"Parameter {idx}: requires_grad={param.requires_grad}")
@@ -46,21 +46,22 @@ for epoch in range(epochs):
     for i in range(n_batches):
         opt.zero_grad()
 
+
         start = i * batch_size
         end = start + batch_size
-        x = bobr.Tensor(train_X[start:end])
-        y = bobr.Tensor(train_y_oh[start:end])
+        x = bobr.Tensor(train_X[start:end]);        x.label = "X"
+        y = bobr.Tensor(train_y_oh[start:end]);     y.label = "Y"
 
         # forward
         h = (x @ W1 + b1).relu()
         out = h @ W2 + b2
 
         # MSE loss
-        neg_one = bobr.full([1, 1], -1.0)
+        neg_one = bobr.full([1, 1], -1.0); neg_one.label = "neg_one"
         diff = out + y * neg_one
         sq = diff * diff
-        scale = bobr.full([1, 1], 1.0 / (batch_size * out_dim))
-        loss = sq.sum(0).sum(0) * scale
+        scale = bobr.full([1, 1], 1.0 / (batch_size * out_dim)); scale.label = "scale"
+        loss = sq.sum(0).sum(0) * scale; loss.label = "loss"
 
         # backward
         loss.build_backward()
@@ -78,11 +79,12 @@ for epoch in range(epochs):
         preds = np.argmax(out_np, axis=1)
         correct += np.sum(preds == train_y[start:end])
         total += batch_size
-        
+
         # bobr.clear_grads(loss)
         if i % 100 == 0:
             gc.collect()
             print(f"batch {i}: {bobr.memdata()}")
+        
     print(f"Epoch {epoch+1}/{epochs} | Loss: {epoch_loss/n_batches:.4f} | Acc: {correct/total*100:.1f}%")
     
 
@@ -105,3 +107,4 @@ for i in range(test_batches):
     total += batch_size
 
 print(f"Test Accuracy: {correct/total*100:.1f}%")
+

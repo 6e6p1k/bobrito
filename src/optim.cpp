@@ -10,7 +10,7 @@ void Optim::zero_grad()
 {
     for (int i = 0; i < params.size(); ++i) {
         params[i]->grad_node.reset();
-        params[i]->owned_grad = nullptr;
+        params[i]->owned_grad.reset();
     }
 }
 
@@ -29,7 +29,7 @@ void SGD::apply()
         if (params[i]->h_requiers_grad == false)
             throw std::logic_error("Parameter " + params[i]->label + " requires_grad is set to false.");
         
-        auto grad = params[i]->grad_node.lock();
+        auto grad = params[i]->owned_grad;
         if (grad == nullptr || grad->is_data_allocated() == false)
             throw std::logic_error("No grad found for parameter " + params[i]->label + ".");
 

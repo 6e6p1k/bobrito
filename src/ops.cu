@@ -407,7 +407,7 @@ void bwd_relu(InternalNode* res_node)
 
 void sgd(SourceNode* snode, float lr)
 {
-    float* grad_data = snode->grad_node.lock()->get_data();
+    float* grad_data = snode->owned_grad->get_data();
     float* weight_data = snode->get_data();
     int size = snode->h_meta->size;
     

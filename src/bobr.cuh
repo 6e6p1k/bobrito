@@ -19,4 +19,5 @@ Tensor zeros_like(Tensor t);
 std::string get_allocation_stats();
 void reset_memory_pool();
 void clear_graph(Tensor t);
+void draw_graph(Tensor t, const char* png_path);
 }

@@ -11,7 +11,7 @@
 
 using namespace std;
 
-void set_grad_and_travers(std::shared_ptr<Node> fwd_node, std::shared_ptr<Node> new_grad, int param_count) {
+void set_grad_and_travers(std::shared_ptr<Node> fwd_node, std::shared_ptr<InternalNode> new_grad, int param_count) {
     if (fwd_node->grad_node.lock()) {
         // chagne old labels
         fwd_node->grad_node.lock()->label = fwd_node->label + ".partial_grad";
@@ -22,28 +22,25 @@ void set_grad_and_travers(std::shared_ptr<Node> fwd_node, std::shared_ptr<Node> 
         accumulated->label = fwd_node->label + ".grad";
         
         fwd_node->grad_node = accumulated;
-        // if (fwd_node->kind == NodeKind::Source) static_cast<SourceNode*>(fwd_node.get())->owned_grad = accumulated;
-        if (fwd_node->kind == NodeKind::Source)
+        if (fwd_node->kind == NodeKind::Source) 
         {
-            auto owned_grad = static_pointer_cast<InternalNode>(skip(accumulated));
-            owned_grad->num_inputs = 0;
-            owned_grad->inputs[0] = nullptr;
-            // owned_grad->d_data = make_shared<ContentData>();
-            static_cast<SourceNode*>(fwd_node.get())->owned_grad = owned_grad;
+            auto snode = static_cast<SourceNode*>(fwd_node.get());
+
+            if (snode->h_requiers_grad) {
+                static_cast<SourceNode*>(fwd_node.get())->owned_grad = accumulated;
+            }
         }
     } else {
-
         fwd_node->grad_node = new_grad;
-        if (fwd_node->kind == NodeKind::Source)
+        if (fwd_node->kind == NodeKind::Source) 
         {
-            auto owned_grad = static_pointer_cast<InternalNode>(skip(new_grad));
-            owned_grad->num_inputs = 0;
-            owned_grad->inputs[0] = nullptr;
-            // owned_grad->d_data = make_shared<ContentData>();
-            static_cast<SourceNode*>(fwd_node.get())->owned_grad = owned_grad;
+            auto snode = static_cast<SourceNode*>(fwd_node.get());
+
+            if (snode->h_requiers_grad) {
+                static_cast<SourceNode*>(fwd_node.get())->owned_grad = new_grad;
+            }
         }
-        // if (fwd_node->kind == NodeKind::Source) static_cast<SourceNode*>(fwd_node.get())->owned_grad = new_grad;
-        build_backward(fwd_node, std::static_pointer_cast<InternalNode>(new_grad), param_count);
+        build_backward(fwd_node, new_grad, param_count);
     }
 }
 
@@ -60,9 +57,6 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
     shared_ptr<InternalNode> inode = dynamic_pointer_cast<InternalNode>(fwd_node);
     if (inode->param_count < 0) return;
     
-    // cout<<"INSIDE BUILD_BACKWARD ----------------------------------\n";
-    // cout<<"Op: "<<inode->op<<endl;
-
     switch (inode->op) {
         case OpType::Add:
             {
@@ -191,6 +185,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 set_grad_and_travers(A, bwd_a, param_count);
             }
             break;
+
         case OpType::Contiguous:
             {
                 shared_ptr<Node> A = inode->inputs[0];
@@ -205,6 +200,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 set_grad_and_travers(A, bwd_a, param_count);
             }
             break;
+
         case OpType::ReLU:
             {
                 shared_ptr<Node> A = inode->inputs[0];
@@ -243,6 +239,7 @@ void _backward(shared_ptr<Node> node)
     cfg.label = "BWD GRAPH START";
 
     shared_ptr<InternalNode> first_grad_node = copy_to_internal_node(cfg);
+    first_grad_node->inputs[0] = nullptr;
     node->grad_node = first_grad_node; // new node is the grad of node
     build_backward(node, first_grad_node, first_grad_node->param_count);
 }

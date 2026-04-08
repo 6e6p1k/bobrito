@@ -1,4 +1,5 @@
 #include "allocator.cuh"
+#include "graph_viz.h"
 #include "node.h"
 #include "node_helpers.h"
 #include "tensor.cuh"
@@ -48,7 +49,14 @@ void reset_memory_pool()
 { MemoryPool::call().reset(); }
 
 void clear_graph(Tensor t)
-{
-    clear_grads(t.node);
+{ clear_grads(t.node); }
+
+void draw_graph(Tensor t, const char* png_path)
+{ 
+    std::string dot_path = std::string(png_path) + ".dot";
+    export_dot_full(t.node.get(), dot_path.c_str());
+    std::string cmd = "dot -Tpng " + dot_path + " -o " + png_path;
+    system(cmd.c_str());
+    std::remove(dot_path.c_str());
 }
 }

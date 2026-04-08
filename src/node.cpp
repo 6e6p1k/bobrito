@@ -21,10 +21,12 @@ ostream& operator<<(std::ostream& os, const OpType& op)
 {
     switch (op) {
         case OpType::Add:               return os << "+";
+        case OpType::Sub:               return os << "-";
         case OpType::Mul:               return os << "*";
-        case OpType::SumLD:               return os << "∑";
-        case OpType::MinLD:               return os << ".min()";
-        case OpType::MaxLD:               return os << ".max()";
+        case OpType::Div:               return os << "/";
+        case OpType::SumLD:             return os << "∑";
+        case OpType::MinLD:             return os << ".min()";
+        case OpType::MaxLD:             return os << ".max()";
         case OpType::MatMul:            return os << "@";
         case OpType::Skip:              return os << ".skip()";
         case OpType::Contiguous:        return os << "~";
@@ -40,10 +42,12 @@ string opToString(const OpType& op)
 {
     switch (op) {
         case OpType::Add:           return "+";
+        case OpType::Sub:           return "-";
         case OpType::Mul:           return "*";
-        case OpType::SumLD:           return ".sum()";
-        case OpType::MinLD:           return ".min()";
-        case OpType::MaxLD:           return ".maxld()";
+        case OpType::Div:           return "/";
+        case OpType::SumLD:         return ".sum()";
+        case OpType::MinLD:         return ".min()";
+        case OpType::MaxLD:         return ".maxld()";
         case OpType::MatMul:        return "@";
         case OpType::Skip:          return ".skip()";
         case OpType::Contiguous:    return ".contiguous()";
@@ -433,21 +437,18 @@ void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order)
     order.push_back(node);
 }
 
-
-void build_topo_grad(Node* node, unordered_set<Node*>& visited, vector<Node*>& order)
-{
+void build_topo_grad(Node* node, unordered_set<Node*>& visited, vector<Node*>& order) {
     if (visited.count(node)) return;
     visited.insert(node);
 
     if (node->kind == NodeKind::Internal) {
         InternalNode* inode = static_cast<InternalNode*>(node);
-        // compute num_outputs
-        int num_outputs = 0;
-        while (num_outputs < 4 && inode->outputs[num_outputs].lock()) num_outputs++;
-        // same but with outputs
-        for (int i = 0; i < num_outputs; i++) build_topo_grad(inode->outputs[i].lock().get(), visited, order);
+        for (int i = 0; i < 4; i++) {
+            auto out = inode->outputs[i].lock();
+            if (!out) continue;
+            build_topo_grad(out.get(), visited, order);
+        }
     }
-    // cout<<node->label<<" | ";
     order.push_back(node);
 }
 
@@ -517,13 +518,12 @@ void _geval(std::shared_ptr<Node> root)
 {
     // perform topological sort
     vector<Node*> order = topo_sort(root, true);
-
     // fill the root node grad with beer
     // prepare_starting_grad(root);
 
     // cout<<"GEVAL LOOP: ---------------------------------"<<endl;
     // walk in order
-    for (int i = order.size() - 2; i >= 0; --i)
+    for (int i = order.size() - 1; i >= 0; --i)
     {
         if (order[i]->kind == NodeKind::Source) continue;
 
@@ -538,6 +538,8 @@ void _geval(std::shared_ptr<Node> root)
         } 
         // else if (inode->d_data) cout<<"ContentData is already specified.";
         inode->d_data->allocate(size);
+
+        
         // dispatch
         // cout<<"------------------------------------------------"<<endl;
         // cout<<"node: "<<inode->label<<endl;
@@ -546,6 +548,7 @@ void _geval(std::shared_ptr<Node> root)
         // cout<<"size: "<<(inode->h_meta->size)<<endl;
         op_based_eval(inode);
         // print_node(inode);
+
     }
 }
 

@@ -200,6 +200,7 @@ PYBIND11_MODULE(bobr, m) {
     m.def("memdata", &bobr::get_allocation_stats);
     m.def("memreset", &bobr::reset_memory_pool, "Lowk clears cache.");
     m.def("clear_grads", &bobr::clear_graph);
+    m.def("draw_graph", &bobr::draw_graph, py::arg("tensor"), py::arg("file name.png") = "full_graph.png");
 }
 
 // nvcc -shared -std=c++17 -Xcompiler -fPIC     $(python3 -m pybind11 --includes)     -I..     bindings.cu ../ops.cu ../allocator.cu ../kernels.cu ../utils.cpp ../node.cpp ../backward.cpp ../graph_viz.cpp ../visualize_graph.cpp     -o bobr$(python3-config --extension-suffix)     -lcublas

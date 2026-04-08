@@ -35,7 +35,7 @@ struct InodeConfig {
 
     bool is_linking() const {
         if (num_inputs == -1 || inputs == nullptr) return false;
-        if (num_inputs < 1 && num_inputs > 2) throw std::logic_error("Unacceptable number of inputs."); // cap at 2 for now
+        if (num_inputs < 1 || num_inputs > 2) throw std::logic_error("Unacceptable number of inputs."); // cap at 2 for now
         return true;
     }
 

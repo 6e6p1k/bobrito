@@ -161,7 +161,7 @@ std::shared_ptr<InternalNode> copy_to_internal_node(InodeConfig cfg)
             else
                 cfg.inputs[i]->outputs[1] = node;
         }
-    }
+    } else node->num_inputs = 0;
 
     if (cfg.is_param_count())
         node->param_count = cfg.param_count;

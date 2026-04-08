@@ -32,7 +32,9 @@ namespace clr {
 static const char* op_symbol(OpType op) {
     switch (op) {
         case OpType::Add:           return "+";
+        case OpType::Sub:           return "-";
         case OpType::Mul:           return "✕";
+        case OpType::Div:           return "/";
         case OpType::MatMul:        return "@";
         case OpType::SumLD:         return "Σ";
         case OpType::MaxLD:         return "↑";
@@ -52,7 +54,9 @@ static const char* op_symbol(OpType op) {
 static const char* op_name(OpType op) {
     switch (op) {
         case OpType::Add:           return "Add";
+        case OpType::Sub:           return "Sub";
         case OpType::Mul:           return "Mul";
+        case OpType::Div:           return "Div";
         case OpType::MatMul:        return "MatMul";
         case OpType::SumLD:         return "Sum";
         case OpType::MaxLD:         return "Max";
@@ -74,9 +78,9 @@ static const char* op_color(OpType op) {
         case OpType::Add:       return clr::bcyan;
         case OpType::Mul:       return clr::bmagenta;
         case OpType::MatMul:    return clr::bblue;
-        case OpType::SumLD:       return clr::byellow;
-        case OpType::MaxLD:       return clr::bred;
-        case OpType::MinLD:       return clr::bgreen;
+        case OpType::SumLD:     return clr::byellow;
+        case OpType::MaxLD:     return clr::bred;
+        case OpType::MinLD:     return clr::bgreen;
         case OpType::ReLU:      return clr::byellow;
         case OpType::Skip:      return clr::bblue;
         case OpType::BwdStart:  return clr::gray;
@@ -704,25 +708,29 @@ static void dot_emit_node_full(ofstream& out, Node* node, unordered_set<Node*>& 
         }
 
         // follow outputs
-        int num_outputs = 0;
-        while (num_outputs < 4 && inode->outputs[num_outputs].lock()) num_outputs++;
-        for (int i = 0; i < num_outputs; i++) {
-            string child_id = "n" + to_string((uintptr_t)inode->outputs[i].lock().get());
+        // int num_outputs = 0;
+        // while (num_outputs < 4 && snode->outputs[num_outputs].lock()) num_outputs++;
+        for (int i = 0; i < 4; i++) {
+            auto _out = inode->outputs[i].lock();
+            if (!_out) continue;
+            string child_id = "n" + to_string((uintptr_t)_out.get());
             out << "    " << id << " -> " << child_id
                 << " [color=\"#00ffff\" penwidth=3 arrowsize=1.2];\n";
-            dot_emit_node_full(out, inode->outputs[i].lock().get(), visited_nodes, visited_edges);
+            dot_emit_node_full(out, _out.get(), visited_nodes, visited_edges);
         }
     } else {
         SourceNode* snode = static_cast<SourceNode*>(node);
 
         // follow outputs from source too
-        int num_outputs = 0;
-        while (num_outputs < 4 && snode->outputs[num_outputs].lock()) num_outputs++;
-        for (int i = 0; i < num_outputs; i++) {
-            string child_id = "n" + to_string((uintptr_t)snode->outputs[i].lock().get());
+        // int num_outputs = 0;
+        // while (num_outputs < 4 && snode->outputs[num_outputs].lock()) num_outputs++;
+        for (int i = 0; i < 4; i++) {
+            auto _out = snode->outputs[i].lock();
+            if (!_out) continue;
+            string child_id = "n" + to_string((uintptr_t)(_out.get()));
             out << "    " << id << " -> " << child_id
                 << " [color=\"#00ffff\" penwidth=3 arrowsize=1.2];\n";
-            dot_emit_node_full(out, snode->outputs[i].lock().get(), visited_nodes, visited_edges);
+            dot_emit_node_full(out, _out.get(), visited_nodes, visited_edges);
         }
     }
 }
