@@ -402,6 +402,21 @@ std::shared_ptr<Node> relu(std::shared_ptr<Node> a)
     node->label = "( relu" + a->label + " )";
     return node;
 }
+
+std::shared_ptr<Node> log(std::shared_ptr<Node> a)
+{
+    std::shared_ptr<Node> inputs[] = {a};
+
+    auto node = make_internal_node({
+        .op = OpType::Log,
+        .shape = a->h_meta->shape(),
+        .ndim = a->h_meta->ndim,
+        .inputs = inputs,
+        .num_inputs = 1,
+    });
+    node->label = "( log" + a->label + " )";
+    return node;
+}
 //      </ops>
 // </nodes interaction>
 
@@ -566,10 +581,9 @@ void op_based_eval(InternalNode* inode)
         case OpType::MinLD:         cu_ops::min_last_dim(inode);        return;
         case OpType::ExpandLD:      cu_ops::expand_last_dim(inode);     return;
         case OpType::BwdStart:      cu_ops::fill(inode, 1.0f);          return;
-        case OpType::Skip:          return;
-        case OpType::Reshape:       return; // no-op: shares d_content with input, data unchanged
         case OpType::ReLU:          cu_ops::relu(inode);                return;
         case OpType::BwdReLU:       cu_ops::bwd_relu(inode);            return;
+        case OpType::Log:           cu_ops::log(inode);                 return;
         default:                    return;
     }
 }

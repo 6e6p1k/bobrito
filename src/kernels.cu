@@ -60,4 +60,10 @@ __global__ void sgd(float* weight_data, float* grad_data, float lr, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) weight_data[i] -= grad_data[i] * lr;
 }
+
+__global__ void log(float* src, float* dst, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) dst[i] = std::log(src[i]);
+}
+
 }

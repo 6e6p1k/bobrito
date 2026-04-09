@@ -415,6 +415,17 @@ void sgd(SourceNode* snode, float lr)
     int blockDim = 256;
     kernels::sgd<<<gridDim, blockDim>>>(weight_data, grad_data, lr, size);
 }
+
+void log(InternalNode* res_node)
+{
+    float* input_data = res_node->inputs[0]->get_data();
+    float* out_data = res_node->get_data();
+    int size = res_node->h_meta->size;
+
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+    kernels::log<<<gridDim, blockDim>>>(input_data, out_data, size);
+}
 }
 
 // __global__ void contiguous(float* src, float* dst, int* shape, int* strides, int ndim, int size);

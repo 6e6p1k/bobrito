@@ -8,7 +8,7 @@
 
 #include "allocator.cuh"
 
-enum class OpType {null, Add, Mul, MatMul, Sub, Div, SumLD, MaxLD, MinLD, ArgMaxLD, ReLU, BwdReLU, Skip, Contiguous, Reshape, ExpandLD, BwdStart, BwdHelper};
+enum class OpType {null, Add, Mul, MatMul, Sub, Log, Div, SumLD, MaxLD, MinLD, ArgMaxLD, ReLU, BwdReLU, Skip, Contiguous, Reshape, ExpandLD, BwdStart, BwdHelper};
 std::ostream& operator<<(std::ostream& os, const OpType& op);
 std::string opToString(const OpType& op);
 

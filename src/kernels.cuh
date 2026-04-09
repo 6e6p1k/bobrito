@@ -1,5 +1,7 @@
 #pragma once
 
+#include "utils.h"
+
 struct cuAdd { __device__ static float apply(float a, float b) { return a + b; } };
 struct cuMul { __device__ static float apply(float a, float b) { return a * b; } };
 struct cuSub { __device__ static float apply(float a, float b) { return a - b; } };
@@ -34,5 +36,6 @@ __global__ void expand_last_dim(float* src, float* dst, int last_dim, int n);
 __global__ void relu(float* src, float* dst, int n);
 __global__ void bwd_relu(float* fwd_data, float* prev_grad, float* new_grad, int n);
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n);
+__global__ void log(float* src, float* dst, int n);
 }
 
