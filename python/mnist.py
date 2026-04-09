@@ -37,6 +37,7 @@ opt = bobr.SGD([W1, b1, W2, b2], lr=0.01)
 
 n_batches = train_X.shape[0] // batch_size
 
+
 # ============ Train ============
 for epoch in range(epochs):
     epoch_loss = 0.0
@@ -54,17 +55,21 @@ for epoch in range(epochs):
 
         # forward
         h = (x @ W1 + b1).relu()
-        out = h @ W2 + b2
+        out = h @ W2 + b2 # [64, 10]
+
+        # softmax
+        maxes = out.max(-1, keepdims=True)  # [64, 1]
+        shifted = out - maxes # [64, 10]
+        exp_out = shifted.exp() # [64, 10]
+        sm_out = exp_out * (exp_out.sum(-1, keepdims=True) ** -1) # [64, 10] * [64, 1]
 
         # MSE loss
-        neg_one = bobr.full([1, 1], -1.0); neg_one.label = "neg_one"
-        diff = out + y * neg_one
-        sq = diff * diff
-        scale = bobr.full([1, 1], 1.0 / (batch_size * out_dim)); scale.label = "scale"
-        loss = sq.sum(0).sum(0) * scale; loss.label = "loss"
+        scale = bobr.full([1, 1], 1.0 / batch_size); scale.label = "scale"
+        loss = (-(y * sm_out.log())).sum(0).sum(0) * scale; loss.label = "loss"
 
         # backward
         loss.build_backward()
+        # bobr.draw_graph(loss)
         loss.eval()
         loss.geval()
 
@@ -84,7 +89,8 @@ for epoch in range(epochs):
         if i % 100 == 0:
             gc.collect()
             print(f"batch {i}: {bobr.memdata()}")
-        
+    #     break
+    # break
     print(f"Epoch {epoch+1}/{epochs} | Loss: {epoch_loss/n_batches:.4f} | Acc: {correct/total*100:.1f}%")
     
 

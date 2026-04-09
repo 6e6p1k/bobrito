@@ -80,8 +80,8 @@ std::shared_ptr<InternalNode> make_internal_node(InodeConfig cfg)
     node->h_meta = make_shape_data(cfg.ndim, cfg.shape, cfg.strides);
     for (int i = 0; i < cfg.num_inputs; i++)
     {
+        cfg.inputs[0]->param_count++;
         node->inputs[i] = cfg.inputs[i];
-        node->param_count += cfg.inputs[i]->param_count;
         if (cfg.inputs[i]->outputs[0].lock() == nullptr) cfg.inputs[i]->outputs[0] = node;
         else cfg.inputs[i]->outputs[1] = node;
     }
@@ -109,13 +109,13 @@ std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> exampl
     return node;
 }
 
-std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool transposed, OpType op)
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool transposed, OpType op, bool copy_grad_node)
 {
     auto node = std::make_shared<InternalNode>();
     node->kind = NodeKind::Internal;
     node->h_meta = example->h_meta;
     node->d_data = example->d_data;
-    node->grad_node = example->grad_node;
+    if (copy_grad_node) node->grad_node = example->grad_node;
     node->label = example->label + "_copy";
     node->transposed = transposed;
     node->param_count = example->param_count;

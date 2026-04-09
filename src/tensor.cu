@@ -4,9 +4,9 @@
 #include <memory>
 #include "node.h"
 #include "backward.h"
+#include "node_helpers.h"
 #include "ops.cuh"
 #include "utils.h"
-#include "node_helpers.h"
 #include "tensor.cuh"
 
 
@@ -33,33 +33,30 @@
         cu_ops::fill(node.get(), val);
     }
 
-    Tensor Tensor::matmul(const Tensor& other) {
-        return Tensor(::matmul(node, other.node));
+    Tensor Tensor::matmul(const Tensor& other) { return Tensor(::matmul(node, other.node)); }
+
+    // elemwise
+    Tensor Tensor::operator+(const Tensor& other) { return Tensor(::add(node, other.node)); }
+    Tensor Tensor::operator-(const Tensor& other) { return Tensor(::sub(node, other.node)); }
+    Tensor Tensor::operator*(const Tensor& other) { return Tensor(::mul(node, other.node)); }
+    Tensor Tensor::operator/(const Tensor& other) { return Tensor(::div(node, other.node)); }
+    Tensor Tensor::pow(const float exponent)     
+    { 
+        auto n2 = make_filled_source_node(node->h_meta->shape(), node->h_meta->ndim, exponent, false);
+        return Tensor(::pow(node, n2)); 
     }
 
-    Tensor Tensor::operator+(const Tensor& other) {
-        return Tensor(::add(node, other.node));
-    }
+    // reductions
+    Tensor Tensor::sum(int dim, bool keepdims) { return Tensor(::sum(node, dim, keepdims)); }
+    Tensor Tensor::max(int dim, bool keepdims) { return Tensor(::max(node, dim, keepdims)); }
+    Tensor Tensor::min(int dim, bool keepdims) { return Tensor(::min(node, dim, keepdims)); }
 
-    Tensor Tensor::operator-(const Tensor& other) {
-        return Tensor(::sub(node, other.node));
-    }
-
-    Tensor Tensor::operator*(const Tensor& other) {
-        return Tensor(::mul(node, other.node));
-    }
-
-    Tensor Tensor::operator/(const Tensor& other) {
-        return Tensor(::div(node, other.node));
-    }
-
-    Tensor Tensor::relu() {
-        return Tensor(::relu(node));
-    }
-
-    Tensor Tensor::sum(int dim) {
-        return Tensor(::sum(node, dim));
-    }
+    // unary ops
+    Tensor Tensor::relu() { return Tensor(::relu(node)); }
+    Tensor Tensor::log() { return Tensor(::log(node)); }
+    Tensor Tensor::sqrt() { return Tensor(::sqrt(node)); }
+    Tensor Tensor::neg() { return Tensor(::neg(node)); }
+    Tensor Tensor::exp() { return Tensor(::exp(node)); }
 
     void Tensor::evaluate(void) {
         eval(node);

@@ -106,6 +106,19 @@ void div(InternalNode* res_node)
     // CUDA_CHECK();
 }
 
+void pow(InternalNode* res_node)
+{
+    BroadcastInfo info = broadcast::elemwise(res_node);
+    float* res_data = res_node->get_data();
+    float* a_data = res_node->inputs[0]->get_data();
+    float* b_data = res_node->inputs[1]->get_data();
+    int n = res_node->h_meta->size;
+
+    int gridDim = (n + 255) / 256;
+    int blockDim = 256;
+    kernels::elemwise<cuPow><<<gridDim, blockDim>>>(a_data, b_data, res_data, info);
+}
+
 // void matmul(InternalNode* res_node) {}
 void matmul(InternalNode* res_node) 
 {
@@ -378,7 +391,59 @@ void relu(InternalNode* res_node)
     int gridDim = (size + 255) / 256;
     int blockDim = 256;
 
-    kernels::relu<<<gridDim, blockDim>>>(data, res_data, size);
+    kernels::unary<cuReLU><<<gridDim, blockDim>>>(data, res_data, size);
+    // CUDA_CHECK();
+}
+
+void log(InternalNode* res_node)
+{
+    float* res_data = res_node->get_data();
+    float* data = res_node->inputs[0]->get_data();
+    int size = res_node->h_meta->size;
+
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+
+    kernels::unary<cuLog><<<gridDim, blockDim>>>(data, res_data, size);
+    // CUDA_CHECK();
+}
+
+void exp(InternalNode* res_node)
+{
+    float* res_data = res_node->get_data();
+    float* data = res_node->inputs[0]->get_data();
+    int size = res_node->h_meta->size;
+
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+
+    kernels::unary<cuExp><<<gridDim, blockDim>>>(data, res_data, size);
+    // CUDA_CHECK();
+}
+
+void sqrt(InternalNode* res_node)
+{
+    float* res_data = res_node->get_data();
+    float* data = res_node->inputs[0]->get_data();
+    int size = res_node->h_meta->size;
+
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+
+    kernels::unary<cuSqrt><<<gridDim, blockDim>>>(data, res_data, size);
+    // CUDA_CHECK();
+}
+
+void neg(InternalNode* res_node)
+{
+    float* res_data = res_node->get_data();
+    float* data = res_node->inputs[0]->get_data();
+    int size = res_node->h_meta->size;
+
+    int gridDim = (size + 255) / 256;
+    int blockDim = 256;
+
+    kernels::unary<cuNeg><<<gridDim, blockDim>>>(data, res_data, size);
     // CUDA_CHECK();
 }
 
@@ -405,6 +470,18 @@ void bwd_relu(InternalNode* res_node)
     // CUDA_CHECK();
 }
 
+void bwd_pow(InternalNode* res_node) {
+    float* prev_grad = res_node->inputs[0]->get_data();
+    float* mantissa  = res_node->inputs[1]->get_data();
+    float* exponent  = res_node->inputs[2]->get_data();
+    float* new_grad  = res_node->get_data();
+    int size = res_node->h_meta->size;
+
+    int grid = (size + 255) / 256;
+    kernels::fused_bwd_pow<<<grid, 256>>>(mantissa, exponent, prev_grad, new_grad, size);
+}
+
+
 void sgd(SourceNode* snode, float lr)
 {
     float* grad_data = snode->owned_grad->get_data();
@@ -416,16 +493,8 @@ void sgd(SourceNode* snode, float lr)
     kernels::sgd<<<gridDim, blockDim>>>(weight_data, grad_data, lr, size);
 }
 
-void log(InternalNode* res_node)
-{
-    float* input_data = res_node->inputs[0]->get_data();
-    float* out_data = res_node->get_data();
-    int size = res_node->h_meta->size;
 
-    int gridDim = (size + 255) / 256;
-    int blockDim = 256;
-    kernels::log<<<gridDim, blockDim>>>(input_data, out_data, size);
-}
+
 }
 
 // __global__ void contiguous(float* src, float* dst, int* shape, int* strides, int ndim, int size);

@@ -34,6 +34,11 @@ ostream& operator<<(std::ostream& os, const OpType& op)
         case OpType::ExpandLD:          return os << "[ ]";
         case OpType::ReLU:              return os << "relu";
         case OpType::BwdReLU:           return os << "bwd_relu";
+        case OpType::Pow:               return os << "pow";
+        case OpType::BwdPow:            return os << "bwd_pow";
+        case OpType::Log:               return os << "log";
+        case OpType::Neg:               return os << "neg";
+        case OpType::Exp:               return os << "exp";
         default:                        return os << "Unknown";
     }
 }
@@ -55,6 +60,11 @@ string opToString(const OpType& op)
         case OpType::ExpandLD:      return ".expandld()";
         case OpType::ReLU:          return ".relu()";
         case OpType::BwdReLU:       return ".bwd_relu()";
+        case OpType::Pow:           return "^";
+        case OpType::Neg:           return ".neg()";
+        case OpType::BwdPow:        return ".bwd_pow()";
+        case OpType::Exp:           return ".exp()";
+        case OpType::Log:           return ".log()";
         default:                    return "Unknown";
     }
 }
@@ -198,25 +208,58 @@ std::shared_ptr<Node> reduce(std::shared_ptr<Node> a, int dim, bool keepdims, Op
     }
     return node_after_sum;
 }
+
+std::shared_ptr<Node> unary(std::shared_ptr<Node> a, OpType op)
+{
+    std::shared_ptr<Node> inputs[] = {a};
+
+    auto node = make_internal_node({
+        .op = op,
+        .shape = a->h_meta->shape(),
+        .ndim = a->h_meta->ndim,
+        .inputs = inputs,
+        .num_inputs = 1,
+    });
+    node->label = "( " + opToString(op) + a->label + " )";
+    return node;
+}
+
 //      </general operations>
 
 //      <ops>
+
+// unary
+std::shared_ptr<Node> relu(std::shared_ptr<Node> a)
+{ return unary(a, OpType::ReLU); }
+
+std::shared_ptr<Node> log(std::shared_ptr<Node> a)
+{ return unary(a, OpType::Log); }
+
+std::shared_ptr<Node> exp(std::shared_ptr<Node> a)
+{ return unary(a, OpType::Exp); }
+
+std::shared_ptr<Node> neg(std::shared_ptr<Node> a)
+{ return unary(a, OpType::Neg); }
+
+std::shared_ptr<Node> sqrt(std::shared_ptr<Node> a)
+{ return unary(a, OpType::Sqrt); }
+
+// elemwise
 std::shared_ptr<Node> add(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b) 
-{ 
-    return elemwise(a, b, OpType::Add); 
-}
+{ return elemwise(a, b, OpType::Add); }
+
 std::shared_ptr<Node> mul(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b) 
-{ 
-    return elemwise(a, b, OpType::Mul);
-}
+{ return elemwise(a, b, OpType::Mul); }
+
 std::shared_ptr<Node> sub(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b)
-{
-    return elemwise(a, b, OpType::Sub);
-}
+{ return elemwise(a, b, OpType::Sub); }
+
 std::shared_ptr<Node> div(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b)
-{
-    return elemwise(a, b, OpType::Div);
-}
+{ return elemwise(a, b, OpType::Div); }
+
+std::shared_ptr<Node> pow(std::shared_ptr<Node> a, std::shared_ptr<Node> pow)
+{ return elemwise(a, pow, OpType::Pow); }
+
 
 std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b, std::shared_ptr<Node> dst)
 {
@@ -308,6 +351,7 @@ std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_n
     return node;
 }
 
+// reductions
 std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims)
 {
     return reduce(a, dim, keepdims, OpType::SumLD);
@@ -388,35 +432,6 @@ std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> node, int* target_sh
     return current;
 }
 
-std::shared_ptr<Node> relu(std::shared_ptr<Node> a)
-{
-    std::shared_ptr<Node> inputs[] = {a};
-
-    auto node = make_internal_node({
-        .op = OpType::ReLU,
-        .shape = a->h_meta->shape(),
-        .ndim = a->h_meta->ndim,
-        .inputs = inputs,
-        .num_inputs = 1,
-    });
-    node->label = "( relu" + a->label + " )";
-    return node;
-}
-
-std::shared_ptr<Node> log(std::shared_ptr<Node> a)
-{
-    std::shared_ptr<Node> inputs[] = {a};
-
-    auto node = make_internal_node({
-        .op = OpType::Log,
-        .shape = a->h_meta->shape(),
-        .ndim = a->h_meta->ndim,
-        .inputs = inputs,
-        .num_inputs = 1,
-    });
-    node->label = "( log" + a->label + " )";
-    return node;
-}
 //      </ops>
 // </nodes interaction>
 
@@ -575,15 +590,27 @@ void op_based_eval(InternalNode* inode)
         case OpType::Sub:           cu_ops::sub(inode);                 return;
         case OpType::Mul:           cu_ops::mul(inode);                 return;
         case OpType::Div:           cu_ops::div(inode);                 return;
+        case OpType::Pow:           cu_ops::pow(inode);                 return;
+
+
         case OpType::MatMul:        cu_ops::matmul(inode);              return;
         case OpType::Contiguous:    cu_ops::contiguous(inode);          return;
+
         case OpType::SumLD:         cu_ops::sum_last_dim(inode);        return;
+        case OpType::MaxLD:         cu_ops::max_last_dim(inode);        return;
         case OpType::MinLD:         cu_ops::min_last_dim(inode);        return;
         case OpType::ExpandLD:      cu_ops::expand_last_dim(inode);     return;
+
         case OpType::BwdStart:      cu_ops::fill(inode, 1.0f);          return;
-        case OpType::ReLU:          cu_ops::relu(inode);                return;
         case OpType::BwdReLU:       cu_ops::bwd_relu(inode);            return;
+        case OpType::BwdPow:        cu_ops::bwd_pow(inode);             return;
+
+        case OpType::ReLU:          cu_ops::relu(inode);                return;
         case OpType::Log:           cu_ops::log(inode);                 return;
+        case OpType::Neg:           cu_ops::neg(inode);                 return;
+        case OpType::Exp:           cu_ops::exp(inode);                 return;
+        case OpType::Sqrt:          cu_ops::sqrt(inode);                return;
+
         default:                    return;
     }
 }

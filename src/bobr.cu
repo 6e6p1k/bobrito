@@ -51,11 +51,11 @@ void reset_memory_pool()
 void clear_graph(Tensor t)
 { clear_grads(t.node); }
 
-void draw_graph(Tensor t, const char* png_path)
+void draw_graph(Tensor t, const char* pdf_path)
 { 
-    std::string dot_path = std::string(png_path) + ".dot";
+    std::string dot_path = std::string(pdf_path) + ".dot";
     export_dot_full(t.node.get(), dot_path.c_str());
-    std::string cmd = "dot -Tpng " + dot_path + " -o " + png_path;
+    std::string cmd = "dot -Tpdf " + dot_path + " -o " + pdf_path;
     system(cmd.c_str());
     std::remove(dot_path.c_str());
 }

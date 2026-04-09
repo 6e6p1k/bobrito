@@ -65,6 +65,6 @@ std::shared_ptr<SourceNode> make_filled_source_node(std::vector<int> vec_shape, 
 std::shared_ptr<InternalNode> make_internal_node(OpType op, std::shared_ptr<Node> inputs[], int num_inputs, int* shape, int ndim, int* strides = nullptr, int param_count = 0);
 std::shared_ptr<InternalNode> make_internal_node(InodeConfig cfg);
 std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example);
-std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool transposed, OpType op);
+std::shared_ptr<InternalNode> copy_to_internal_node(std::shared_ptr<Node> example, bool transposed, OpType op, bool copy_grad_node = false);
 std::shared_ptr<InternalNode> copy_to_internal_node(InodeConfig cfg);
 void print_node(Node* node);

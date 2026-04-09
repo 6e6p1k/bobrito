@@ -46,24 +46,21 @@ __global__ void expand_last_dim(float* src, float* dst, int last_dim, int n) {
     dst[out_idx] = src[out_idx / last_dim];
 }
 
-__global__ void relu(float* input, float* output, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) output[i] = input[i] > 0 ? input[i] : 0;
-}
-
 __global__ void bwd_relu(float* fwd_data, float* prev_grad, float* new_grad, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) new_grad[i] = fwd_data[i] > 0 ? prev_grad[i] : 0;
 }
 
+__global__ void fused_bwd_pow(float* mantissa, float* exponent, float* prev_grad, float* new_grad, int n) {
+    // C = A ^ B
+    // dC/dA = dC * B * A ^ (B - 1) 
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) new_grad[i] = prev_grad[i] * exponent[i] * powf(mantissa[i], (exponent[i] - 1.0f));
+}
+
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) weight_data[i] -= grad_data[i] * lr;
-}
-
-__global__ void log(float* src, float* dst, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) dst[i] = std::log(src[i]);
 }
 
 }

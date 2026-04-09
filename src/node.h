@@ -8,7 +8,10 @@
 
 #include "allocator.cuh"
 
-enum class OpType {null, Add, Mul, MatMul, Sub, Log, Div, SumLD, MaxLD, MinLD, ArgMaxLD, ReLU, BwdReLU, Skip, Contiguous, Reshape, ExpandLD, BwdStart, BwdHelper};
+enum class OpType {null, Add, Mul, MatMul, Sub, Log, Div, SumLD, MaxLD, MinLD, ArgMaxLD, ReLU, BwdReLU, 
+    Skip, Contiguous, Reshape, ExpandLD, BwdStart, BwdHelper, Exp, Pow, Sqrt, Neg,
+    BwdPow,
+};
 std::ostream& operator<<(std::ostream& os, const OpType& op);
 std::string opToString(const OpType& op);
 
@@ -44,6 +47,7 @@ struct Node
     int param_count = 0;
     std::string label; // just to test, remove later
     std::weak_ptr<Node> outputs[4]; // for grad
+    std::shared_ptr<Node> grad_buffer;
 
     float* get_data();
     bool is_data_allocated();
@@ -53,9 +57,10 @@ struct Node
 struct SourceNode : Node
 {
     bool h_requiers_grad = false;
-    std::shared_ptr<Node> owned_grad;  // keeps grad graph alive for source nodes
     SourceNode() = default;
     SourceNode(float* data, int ndim, int* shape, int* strides = nullptr, bool requires_grad = false);
+    std::shared_ptr<Node> owned_grad;  // keeps grad graph alive for source nodes
+
 };
 
 struct InternalNode : Node
@@ -70,25 +75,41 @@ struct InternalNode : Node
 //      <general operations>
 std::shared_ptr<Node> elemwise(std::shared_ptr<Node> a, std::shared_ptr<Node> b, OpType op, std::shared_ptr<Node> dst = nullptr);
 std::shared_ptr<Node> reduction(std::shared_ptr<Node> a, int dim, OpType op, bool keepdims, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> node, int* target_shape, int target_ndim);
 //      </general operations>
 
+// elemwise
 std::shared_ptr<Node> add(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b);
 std::shared_ptr<Node> sub(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b);
 std::shared_ptr<Node> mul(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b);
 std::shared_ptr<Node> div(const std::shared_ptr<Node> a, const std::shared_ptr<Node> b);
+std::shared_ptr<Node> pow(std::shared_ptr<Node> a, std::shared_ptr<Node> pow);
+
+// unary
+std::shared_ptr<Node> relu(std::shared_ptr<Node> a);
+std::shared_ptr<Node> log(std::shared_ptr<Node> a);
+std::shared_ptr<Node> exp(std::shared_ptr<Node> a);
+std::shared_ptr<Node> neg(std::shared_ptr<Node> a);
+std::shared_ptr<Node> sqrt(std::shared_ptr<Node> a);
+
+// reduction
 std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
 std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
 std::shared_ptr<Node> argmax(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
+std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim = -1, bool keepdims = false);
+
+
 std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
+std::shared_ptr<Node> expand_last_dim(std::shared_ptr<Node> a, int* desired_shape, int ndim, std::shared_ptr<Node> dst = nullptr);
 std::shared_ptr<Node> skip(std::shared_ptr<Node> a);
 std::shared_ptr<Node> copy(std::shared_ptr<Node> a, std::shared_ptr<Node> dst);
+
+
+// meta operations
 std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
 std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_ndim);
-std::shared_ptr<Node> sum_last_dim(std::shared_ptr<Node> a, std::shared_ptr<Node> dst = nullptr);
-std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims = false);
-std::shared_ptr<Node> expand_last_dim(std::shared_ptr<Node> a, int* desired_shape, int ndim, std::shared_ptr<Node> dst = nullptr);
-std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> node, int* target_shape, int target_ndim);
-std::shared_ptr<Node> relu(std::shared_ptr<Node> a);
+
 
 // </nodes interaction>
 

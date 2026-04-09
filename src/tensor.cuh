@@ -14,12 +14,25 @@ public:
     // OPS
     void fill(float val);
     Tensor matmul(const Tensor& other);
+
+    // elemwise
     Tensor operator+(const Tensor& other);
     Tensor operator-(const Tensor& other);
     Tensor operator*(const Tensor& other);
     Tensor operator/(const Tensor& other);
+    Tensor pow(const float exponent);
+
+    // reduction
+    Tensor sum(int dim, bool keepdims);
+    Tensor max(int dim, bool keepdims);
+    Tensor min(int dim, bool keepdims);
+
+    // unary
     Tensor relu();
-    Tensor sum(int dim);
+    Tensor neg();
+    Tensor exp();
+    Tensor log();
+    Tensor sqrt();
 
     // CALCULATION
     void evaluate(void);

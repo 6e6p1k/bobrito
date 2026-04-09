@@ -5,6 +5,7 @@
 #include "../src/tensor.cuh"
 #include "../src/bobr.cuh"
 #include "node.h"
+#include "pybind11/cast.h"
 
 namespace py = pybind11;
 
@@ -123,7 +124,12 @@ PYBIND11_MODULE(bobr, m) {
         .def("fill", &Tensor::fill)
         .def("matmul", &Tensor::matmul)
         .def("relu", &Tensor::relu)
-        .def("sum", &Tensor::sum)
+        .def("log", &Tensor::log)
+        .def("exp", &Tensor::exp)
+        .def("sqrt", &Tensor::sqrt)
+        .def("sum", &Tensor::sum, py::arg("dim") = -1, py::arg("keepdims") = false)
+        .def("max", &Tensor::max, py::arg("dim") = -1, py::arg("keepdims") = false)
+
 
         // EVAL ETC
         .def("eval", &Tensor::evaluate)
@@ -136,7 +142,9 @@ PYBIND11_MODULE(bobr, m) {
         .def("__sub__", &Tensor::operator-)
         .def("__mul__", &Tensor::operator*)
         .def("__truediv__", &Tensor::operator/)
+        .def("__pow__", &Tensor::pow, py::arg("exponent"))
         .def("__matmul__", &Tensor::matmul)
+        .def("__neg__", &Tensor::neg)
 
         // Tensor.data
         .def_property_readonly("data", [](const Tensor &t) {
@@ -157,6 +165,10 @@ PYBIND11_MODULE(bobr, m) {
                 return snode->h_requiers_grad;
             }
             return false;
+        })
+
+        .def_property_readonly("shape", [](const Tensor &t) {
+            return t.shape_to_string();
         })
         
         .def_property("label", &Tensor::get_label, &Tensor::set_label)
@@ -198,5 +210,5 @@ PYBIND11_MODULE(bobr, m) {
     m.def("memdata", &bobr::get_allocation_stats);
     m.def("memreset", &bobr::reset_memory_pool, "Lowk clears cache.");
     m.def("clear_grads", &bobr::clear_graph);
-    m.def("draw_graph", &bobr::draw_graph, py::arg("tensor"), py::arg("file name.png") = "full_graph.png");
+    m.def("draw_graph", &bobr::draw_graph, py::arg("tensor"), py::arg("file name.pdf") = "full_graph.pdf");
 }
