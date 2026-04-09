@@ -130,7 +130,6 @@ PYBIND11_MODULE(bobr, m) {
         .def("sum", &Tensor::sum, py::arg("dim") = -1, py::arg("keepdims") = false)
         .def("max", &Tensor::max, py::arg("dim") = -1, py::arg("keepdims") = false)
 
-
         // EVAL ETC
         .def("eval", &Tensor::evaluate)
         .def("geval", &Tensor::geval)
@@ -155,7 +154,7 @@ PYBIND11_MODULE(bobr, m) {
         .def_property_readonly("grad", [](const Tensor &t) {
             if (t.node->grad_node.expired())
                 throw std::runtime_error("No grad available");
-            return data_to_pyarray(t);
+
         })
 
         .def_property_readonly("requires_grad", [](const Tensor &t) {

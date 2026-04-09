@@ -437,23 +437,6 @@ std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> node, int* target_sh
 
 
 // <Topological sort>
-void _build_topo(Node* node, unordered_set<Node*>& visited, vector<InternalNode*>& inodes, vector<SourceNode*>& snodes)
-{
-    if (visited.count(node)) return;
-    visited.insert(node);
-
-    if (node->kind == NodeKind::Internal) 
-    {
-        InternalNode* inode = static_cast<InternalNode*>(node);
-        for (int i = 0; i < inode->num_inputs; i++)
-            _build_topo(inode->inputs[i].get(), visited, inodes, snodes);
-        inodes.push_back(inode);
-    }
-    else {
-        snodes.push_back(static_cast<SourceNode*>(node));
-    }
-}
-
 void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order)
 {
     if (visited.count(node)) return;
@@ -548,37 +531,17 @@ void _geval(std::shared_ptr<Node> root)
 {
     // perform topological sort
     vector<Node*> order = topo_sort(root, true);
-    // fill the root node grad with beer
-    // prepare_starting_grad(root);
 
-    // cout<<"GEVAL LOOP: ---------------------------------"<<endl;
-    // walk in order
     for (int i = order.size() - 1; i >= 0; --i)
     {
         if (order[i]->kind == NodeKind::Source) continue;
 
         InternalNode* inode = static_cast<InternalNode*>(order[i]);
 
-        // allocate grad
         int size = inode->h_meta->size;
-        if (!(inode->d_data)) 
-        {
-            // cout<<"Not allocated\n";
-            inode->d_data = make_shared<ContentData>();
-        } 
-        // else if (inode->d_data) cout<<"ContentData is already specified.";
+        if (!(inode->d_data)) inode->d_data = make_shared<ContentData>();
         inode->d_data->allocate(size);
-
-        
-        // dispatch
-        // cout<<"------------------------------------------------"<<endl;
-        // cout<<"node: "<<inode->label<<endl;
-        // cout << "Type is: " << typeid(order[i]).name() << std::endl;
-        // cout<<"is_data: "<<(inode->d_data && inode->d_data->is_allocated())<<endl;
-        // cout<<"size: "<<(inode->h_meta->size)<<endl;
         op_based_eval(inode);
-        // print_node(inode);
-
     }
 }
 

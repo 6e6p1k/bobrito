@@ -114,7 +114,6 @@ std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* res_shape, int res_n
 // </nodes interaction>
 
 // <Topological sort>
-void _build_topo(Node* node, std::unordered_set<Node*>& visited, std::vector<InternalNode*>& inodes, std::vector<SourceNode*>& snodes);
 void build_topo(Node* node, std::unordered_set<Node*>& visited, std::vector<Node*>& order);
 void build_topo_grad(InternalNode* node, std::unordered_set<InternalNode*>& visited, std::vector<InternalNode*>& order);
 std::vector<Node*> topo_sort(std::shared_ptr<InternalNode> node, bool grad);

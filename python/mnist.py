@@ -33,11 +33,11 @@ b2 = bobr.zeros([1, out_dim], True);                                            
 # for idx, param in enumerate([W1, b1, W2, b2]):
 #     print(f"Parameter {idx}: requires_grad={param.requires_grad}")
 
-opt = bobr.SGD([W1, b1, W2, b2], lr=0.01)
+opt = bobr.SGD([W1, b1, W2, b2], lr=7e-4)
 
 n_batches = train_X.shape[0] // batch_size
-
-
+ 
+count = 0 
 # ============ Train ============
 for epoch in range(epochs):
     epoch_loss = 0.0
@@ -46,7 +46,6 @@ for epoch in range(epochs):
 
     for i in range(n_batches):
         opt.zero_grad()
-
 
         start = i * batch_size
         end = start + batch_size
@@ -63,9 +62,11 @@ for epoch in range(epochs):
         exp_out = shifted.exp() # [64, 10]
         sm_out = exp_out * (exp_out.sum(-1, keepdims=True) ** -1) # [64, 10] * [64, 1]
 
+
         # MSE loss
-        scale = bobr.full([1, 1], 1.0 / batch_size); scale.label = "scale"
+        scale = bobr.full([1, 1], 1.0 / (batch_size * out_dim)); scale.label = "scale"
         loss = (-(y * sm_out.log())).sum(0).sum(0) * scale; loss.label = "loss"
+
 
         # backward
         loss.build_backward()
@@ -85,11 +86,15 @@ for epoch in range(epochs):
         correct += np.sum(preds == train_y[start:end])
         total += batch_size
 
+        count += 1
+        # if count > 20:
+            # break
+
         # bobr.clear_grads(loss)
-        if i % 100 == 0:
+        if i % 300 == 0:
             gc.collect()
             print(f"batch {i}: {bobr.memdata()}")
-    #     break
+        # break
     # break
     print(f"Epoch {epoch+1}/{epochs} | Loss: {epoch_loss/n_batches:.4f} | Acc: {correct/total*100:.1f}%")
     

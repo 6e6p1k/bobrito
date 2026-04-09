@@ -40,7 +40,7 @@ void set_grad_and_travers(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> ne
     }
     // only continue when all upstream grads have arrived
 
-    if (remaining[fwd_node.get()] > 0) fwd_node->grad_buffer = new_grad;
+    if (remaining[fwd_node.get()] > 0) fwd_node->grad_buffer = final_grad;
     else if (remaining[fwd_node.get()] <= 0) 
     {
         build_backward(fwd_node, final_grad, remaining);
@@ -162,8 +162,9 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
 
                 // dB = -dC * A / (B * B)
                 auto B_copy_2 = copy_to_internal_node(B, false, OpType::BwdHelper);
+                auto B_copy_3 = copy_to_internal_node(B, false, OpType::BwdHelper);
                 auto A_copy = copy_to_internal_node(A, false, OpType::BwdHelper);
-                auto B_sq = sqrt(B_copy_2);                // B * B
+                auto B_sq = mul(B_copy_2, B_copy_3);                // B * B
                 auto dC_A = mul(dC, A_copy);                      // dC * A
                 auto ratio = div(dC_A, B_sq);                     // dC * A / (B * B)
                 auto neg_ratio = neg(ratio);                 // negate
@@ -294,6 +295,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 set_grad_and_travers(A, bwd_a, remaining);
             }
             break;
+
         case OpType::Log:
             {
                 shared_ptr<Node> A = inode->inputs[0];
@@ -310,6 +312,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<InternalNode> bwd_node
                 set_grad_and_travers(A, bwd_a, remaining);
             }
             break;
+            
         case OpType::Exp:
             {
                 auto A = inode->inputs[0];
@@ -363,61 +366,10 @@ void _backward(shared_ptr<Node> node)
     node->grad_buffer = first_grad_node; // new node is the grad of node
     node->grad_node = first_grad_node; // new node is the grad of node
 
-
     unordered_map<Node*, int> use_counts;
     unordered_set<Node*> visited;
     count_uses(node, use_counts, visited);
 
-    // for (auto [node, uses] : use_counts)
-    // {
-    //     cout<<"Node: "<<node->label<<endl;
-    //     cout<<"Used: "<<uses<<endl;
-    // }
-
     build_backward(node, first_grad_node, use_counts);
     node->grad_buffer = nullptr;
-}
-
-
-void backward_pass(shared_ptr<Node> node)
-{
-    unordered_set<Node*> visited;
-    vector<InternalNode*> inodes;
-    vector<SourceNode*> snodes;
-    _build_topo(node.get(), visited, inodes, snodes);
-
-    cout<<"Overview:"<<endl;
-    for (int i = 0; i < snodes.size(); ++i)
-    {
-        cout<<"************************************"<<endl;
-        SourceNode* snode = snodes[i];
-        cout<<"Source Node: "<<snode->label<<endl;
-    } 
-
-    for (int i = inodes.size() - 1; i >=0; --i)
-    {
-        InternalNode* inode = inodes[i];
-        cout<<"************************************"<<endl;
-        cout<<"Current op: "<<inode->op<<endl;
-        cout<<"Inputs num: "<<inode->num_inputs<<endl;
-        cout<<"Current expr: "<<inode->label<<endl;
-    }
-
-    for (int i = inodes.size() - 1; i >=0; --i)
-    {
-        InternalNode* inode = inodes[i];
-        for (int i = 0; i < inode->num_inputs; i++)
-        {
-            SourceNode* curr = snodes.back();
-            if (snodes.back()->label == inode->inputs[i]->label)
-            {
-                snodes.pop_back();
-
-            }
-        }
-        cout<<"-----------------------------------"<<endl;
-        cout<<"Current op: "<<inode->op<<endl;
-        cout<<"Inputs num: "<<inode->num_inputs<<endl;
-        cout<<"Current expr: "<<inode->label<<endl;
-    }
 }

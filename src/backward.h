@@ -9,4 +9,3 @@ void count_uses(std::shared_ptr<Node> node, std::unordered_map<Node*, int>& use_
 void set_grad_and_travers(std::shared_ptr<Node> fwd_node, std::shared_ptr<InternalNode> new_grad);
 void build_backward(std::shared_ptr<Node> fwd_node, std::shared_ptr<InternalNode> bwd_node, std::unordered_map<Node*, int>& remaining);
 void _backward(std::shared_ptr<Node> node);
-void backward_pass(std::shared_ptr<Node> node);
