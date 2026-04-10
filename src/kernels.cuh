@@ -54,3 +54,7 @@ __global__ void fused_bwd_pow(float* mantissa, float* exponent, float* prev_grad
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n);
 }
 
+namespace lib_ops
+{
+    void matmul(InternalNode* res_node);
+}

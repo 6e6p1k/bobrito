@@ -117,6 +117,35 @@ ShapePtr make_shape_data(int ndim, int* shape, int* strides)
 float* Node::get_data() { return d_data->data(); }
 bool Node::is_data_allocated() { return d_data->is_allocated(); }
 
+
+bool Node::is_h_meta() { return h_meta != nullptr; }
+int Node::get_size()
+{
+    if (!is_h_meta()) throw logic_error("h_meta is nullptr!");
+    if (h_meta->size == -1) throw logic_error("size wasn't defined!");
+    return h_meta->size;
+}
+int Node::get_ndim()
+{
+    if (!is_h_meta()) throw logic_error("h_meta is nullptr!");
+    if (h_meta->ndim == -1) throw logic_error("ndim wasn't defined!");
+    return h_meta->ndim;
+}
+int* Node::get_shape()
+{
+    if (!is_h_meta()) throw logic_error("h_meta is nullptr!");
+    if (h_meta->shape() == nullptr) throw logic_error("shape wasn't defined!");
+    return h_meta->shape();
+}
+int* Node::get_strides()
+{
+    if (!is_h_meta()) throw logic_error("h_meta is nullptr!");
+    if (h_meta->strides() == nullptr) throw logic_error("strides weren't defined!");
+    return h_meta->strides();
+
+}
+
+
 SourceNode::SourceNode(float* data, int ndim, int* shape, int* strides, bool requires_grad)
 {
     kind = NodeKind::Source;

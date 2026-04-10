@@ -10,7 +10,7 @@
 
 enum class OpType {null, Add, Mul, MatMul, Sub, Log, Div, SumLD, MaxLD, MinLD, ArgMaxLD, ReLU, BwdReLU, 
     Skip, Contiguous, Reshape, ExpandLD, BwdStart, BwdHelper, Exp, Pow, Sqrt, Neg,
-    BwdPow,
+    BwdPow, Leaf
 };
 std::ostream& operator<<(std::ostream& os, const OpType& op);
 std::string opToString(const OpType& op);
@@ -20,8 +20,8 @@ enum class NodeKind { Source, Internal };
 // ShapeData
 struct ShapeData
 {
-    int ndim;
-    int size;
+    int ndim = -1;
+    int size = -1;
     int data[0];
 
     static ShapeData* init(int ndim);
@@ -39,19 +39,32 @@ using ContentPtr = std::shared_ptr<ContentData>;
 // Node
 struct Node
 {
-    NodeKind kind;
-    ShapePtr h_meta;       // shape, strides, ndim on host (shareable between fwd/bwd nodes)
-    ContentPtr d_data;     // forward values on device
-    std::weak_ptr<Node> grad_node;     // gradient on device
-    bool transposed = false;
-    int param_count = 0;
-    std::string label; // just to test, remove later
-    std::weak_ptr<Node> outputs[4]; // for grad
-    std::shared_ptr<Node> grad_buffer;
+    OpType op;
+    std::string label = "";
 
+    ShapePtr h_meta;    
+
+    ContentPtr d_data;  
+    bool transposed = false;
+
+    std::weak_ptr<Node> outputs[4];
+    std::shared_ptr<Node> inputs[4];
+    int num_inputs;
+    int num_outputs;
+
+    std::shared_ptr<Node> grad_buffer;
+    std::shared_ptr<Node> owned_grad;
+    std::weak_ptr<Node> grad_node;
+    bool requires_grad;
+
+    bool is_h_meta();
     float* get_data();
+    int get_size();
+    int get_ndim();
+    int* get_shape();
+    int* get_strides();
     bool is_data_allocated();
-    virtual ~Node() = default;
+    ~Node() = default;
 };
 
 struct SourceNode : Node
@@ -67,7 +80,6 @@ struct InternalNode : Node
 {
     OpType op;  // operation that was used to create this node
     std::shared_ptr<Node> inputs[4];
-    int num_inputs;
 };
 
 // <nodes interaction>
