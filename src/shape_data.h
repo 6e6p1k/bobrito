@@ -1,4 +1,6 @@
-#include "allocator.cuh"
+#pragma once
+#include <iostream>
+#include <memory>
 
 // ShapeData
 struct ShapeData
@@ -13,7 +15,5 @@ struct ShapeData
     void print();
 };
 
-using ShapePtr = std::shared_ptr<ShapeData>;
-ShapePtr make_shape_data(int ndim, int* shape, int* strides = nullptr);
+std::shared_ptr<ShapeData> make_shape_data(int ndim, int* shape, int* strides = nullptr);
 
-using ContentPtr = std::shared_ptr<ContentData>;

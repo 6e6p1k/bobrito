@@ -1,7 +1,7 @@
 #pragma once
 #include <iostream>
 #include <exception>
-#include "node.h"
+#include "nodes.h"
 
 namespace utils 
 {
@@ -34,14 +34,11 @@ struct ContiguousInfo {
 
 namespace broadcast
 {
-BroadcastInfo elemwise(int* a_shape, int* b_shape, int* a_strides, int* b_strides, int* out_shape, int out_ndim);
-BroadcastInfo elemwise(InternalNode* node);
+BroadcastInfo elemwise(int* a_shape, int* b_shape, int* a_strides, int* b_strides, int* out_shape, int out_ndim, int a_ndim, int b_ndim);
 BroadcastInfo elemwise(Node* node);
 MatmulDims matmul(int* a_shape, int* b_shape, int* res_shape, int ndim);
-MatmulDims matmul(InternalNode* node);
 MatmulDims matmul(Node* node);
 ContiguousInfo contiguous(int* res_shape, int* input_strides, int ndim);
-ContiguousInfo contiguous(InternalNode* node);
 ContiguousInfo contiguous(Node* node);
 }
 

@@ -263,8 +263,7 @@ void ContentData::check(void)
 
 bool ContentData::is_allocated(void)
 {
-    if (!b_ptr) { std::cout<<"no block ptr\n"; return false; }
-    if (!(b_ptr->d_ptr)) { std::cout<<"block but no data\n"; return false; }
+    if (b_ptr == nullptr || b_ptr->d_ptr == nullptr) return false;
     return true;
 }
 // </ContentData>

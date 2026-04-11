@@ -1,9 +1,8 @@
-#include <iostream>
 #include <memory>
 #include <cstring>
 #include "utils.h"
-#include "node.h"
-#include "node_helpers.h"
+#include "nodes.h"
+
 
 using namespace std;
 namespace utils 
@@ -27,33 +26,41 @@ int numel(const int ndim, const int* shape) {
 
 namespace broadcast
 {
-BroadcastInfo elemwise(int* a_shape, int* b_shape, int* a_strides, int* b_strides, int* out_shape, int out_ndim)
+BroadcastInfo elemwise(int* a_shape, int* b_shape, int* a_strides, int* b_strides,
+                       int* out_shape, int out_ndim, int a_ndim, int b_ndim)
 {
+    // Inputs may have fewer dims than the output — pad from the left with 1s.
+    int a_off = out_ndim - a_ndim;
+    int b_off = out_ndim - b_ndim;
+
     BroadcastInfo info;
     info.ndim = out_ndim;
     for (int i = 0; i < out_ndim; i++) {
         info.out_shape[i] = out_shape[i];
-        // if input dim == 1 (broadcast), stride = 0, else real stride
-        info.a_strides[i] = (a_shape[i] == 1) ? 0 : a_strides[i];
-        info.b_strides[i] = (b_shape[i] == 1) ? 0 : b_strides[i];
+
+        int a_dim    = (i < a_off) ? 1 : a_shape[i - a_off];
+        int a_stride = (i < a_off) ? 0 : a_strides[i - a_off];
+        info.a_strides[i] = (a_dim == 1) ? 0 : a_stride;
+
+        int b_dim    = (i < b_off) ? 1 : b_shape[i - b_off];
+        int b_stride = (i < b_off) ? 0 : b_strides[i - b_off];
+        info.b_strides[i] = (b_dim == 1) ? 0 : b_stride;
     }
     return info;
 }
 
-BroadcastInfo elemwise(InternalNode* node)
+BroadcastInfo elemwise(Node* node)
 {
-    // input node MUST have exactly 2 inputs
-    // a_info
-    int* a_shape = node->inputs[0]->h_meta->shape();
+    int a_ndim   = node->inputs[0]->h_meta->ndim;
+    int b_ndim   = node->inputs[1]->h_meta->ndim;
+    int* a_shape   = node->inputs[0]->h_meta->shape();
     int* a_strides = node->inputs[0]->h_meta->strides();
-    // b_info
-    int* b_shape = node->inputs[1]->h_meta->shape();
+    int* b_shape   = node->inputs[1]->h_meta->shape();
     int* b_strides = node->inputs[1]->h_meta->strides();
-    // out_info
     int* out_shape = node->h_meta->shape();
-    int out_ndim = node->h_meta->ndim;
+    int out_ndim   = node->h_meta->ndim;
 
-    return elemwise(a_shape, b_shape, a_strides, b_strides, out_shape, out_ndim);
+    return elemwise(a_shape, b_shape, a_strides, b_strides, out_shape, out_ndim, a_ndim, b_ndim);
 }
 
 MatmulDims matmul(int* a_shape, int* b_shape, int* res_shape, int ndim) {
@@ -66,7 +73,7 @@ MatmulDims matmul(int* a_shape, int* b_shape, int* res_shape, int ndim) {
     return {M, K, N, batch, res_shape};
 }
 
-MatmulDims matmul(InternalNode* node) {
+MatmulDims matmul(Node* node) {
     // a_info
     int* a_shape = node->inputs[0]->h_meta->shape();
     // b_info
@@ -91,7 +98,7 @@ ContiguousInfo contiguous(int* res_shape, int* input_strides, int ndim)
     return info;
 }
 
-ContiguousInfo contiguous(InternalNode* node)
+ContiguousInfo contiguous(Node* node)
 {
     int* res_shape = node->h_meta->shape();
     int* input_strides = node->inputs[0]->h_meta->strides();

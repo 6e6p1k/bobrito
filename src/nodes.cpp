@@ -1,5 +1,155 @@
 #include "nodes.h"
+
 #include <memory>
+#include <sstream>
+
+#include "shape_data.h"
 
 using namespace std;
 
+float* Node::get_data() { return d_data->data(); }
+
+bool Node::is_data() { return d_data != nullptr; }
+
+bool Node::is_label() { return label != ""; }
+
+bool Node::is_data_allocated() {
+    if (!is_data()) return false;
+    return d_data->is_allocated();
+}
+
+bool Node::is_meta() { return h_meta != nullptr; }
+
+int Node::get_size() {
+    if (!is_meta()) throw logic_error("h_meta is nullptr!");
+    if (h_meta->size == -1) throw logic_error("size wasn't defined!");
+    return h_meta->size;
+}
+
+int Node::get_ndim() {
+    if (!is_meta()) throw logic_error("h_meta is nullptr!");
+    if (h_meta->ndim == -1) throw logic_error("ndim wasn't defined!");
+    return h_meta->ndim;
+}
+
+int* Node::get_shape() {
+    if (!is_meta()) throw logic_error("h_meta is nullptr!");
+    if (h_meta->shape() == nullptr) throw logic_error("shape wasn't defined!");
+    return h_meta->shape();
+}
+
+int* Node::get_strides() {
+    if (!is_meta()) throw logic_error("h_meta is nullptr!");
+    if (h_meta->strides() == nullptr)
+        throw logic_error("strides weren't defined!");
+    return h_meta->strides();
+}
+
+void Node::set_label(string new_label) { label = new_label; }
+
+std::shared_ptr<Node> make_node(Primitive* prim,
+                                std::vector<std::shared_ptr<Node>> inputs,
+                                int* shape, int ndim) {
+    shared_ptr<Node> node = make_shared<Node>();
+    node->prim = prim;
+    node->h_meta = make_shape_data(ndim, shape);
+    node->d_data = make_shared<ContentData>();
+
+    for (auto input : inputs) {
+        node->inputs.push_back(input);
+        input->outputs.push_back(node);
+    }
+    return node;
+}
+
+std::shared_ptr<Node> copy_node_no_prim(shared_ptr<Node> node) {
+    shared_ptr<Node> out_node = make_shared<Node>();
+    out_node->h_meta = node->h_meta;
+    out_node->d_data = node->d_data;
+    out_node->set_label(node->label + ".copy()");
+    return out_node;
+}
+
+std::shared_ptr<Node> copy_node_no_prim_with_link(shared_ptr<Node> node) {
+    auto out_node = copy_node_no_prim(node);
+    out_node->inputs = node->inputs;
+    out_node->outputs = node->outputs;
+    return out_node;
+}
+
+std::shared_ptr<ScalarNode> make_scalar_node(float value, string label) {
+    shared_ptr<ScalarNode> scalar = make_shared<ScalarNode>();
+    scalar->value = value;
+    scalar->label = label;
+    return scalar;
+}
+
+// ============================================================
+//                         PRINTING
+// ============================================================
+
+void tensorToStringRecursive(std::ostringstream& oss, float* data, int* shape,
+                             int ndim, int dim, int offset) {
+    // Calculate the stride (how many floats to skip for one step in this
+    // dimension)
+    int sliceSize = 1;
+    for (int i = dim + 1; i < ndim; ++i) {
+        sliceSize *= shape[i];
+    }
+
+    oss << "[";
+    for (int i = 0; i < shape[dim]; ++i) {
+        if (dim == ndim - 1) {
+            // Base Case: We're at the deepest level (the floats)
+            oss << data[offset + i];
+            if (i < shape[dim] - 1) oss << ", ";
+        } else {
+            // Recursive Step: Handle the next dimension down
+            tensorToStringRecursive(oss, data, shape, ndim, dim + 1,
+                                    offset + (i * sliceSize));
+
+            // Formatting: Add commas and newlines
+            if (i < shape[dim] - 1) {
+                oss << "\n";
+                // Indentation: matching the number of open brackets
+                for (int space = 0; space <= dim; ++space) oss << " ";
+            }
+        }
+    }
+    oss << "]";
+}
+
+void print_node(std::shared_ptr<Node> node) {
+    std::ostringstream oss;
+    oss << "Node(";
+
+    // label
+    if (node->is_label()) oss << "label='" + node->label + "', ";
+
+    // shape
+    oss << "shape=[";
+    for (int i = 0; i < node->get_ndim(); ++i) {
+        oss << node->get_shape()[i];
+        if (i != node->get_ndim() - 1) oss << ", ";
+    }
+    oss << "]";
+
+    // data
+    if (node->is_data_allocated()) {
+        float* h_data = node->d_data->d_to_h();
+        oss << ", data:\n";
+        tensorToStringRecursive(oss, h_data, node->get_shape(),
+                                node->get_ndim(), 0, 0);
+    }
+
+    // grad
+    if (node->owned_grad && node->owned_grad->is_data() &&
+        node->owned_grad->is_data_allocated()) {
+        float* h_data = node->owned_grad->d_data->d_to_h();
+        oss << ",\ngrad:\n";
+        tensorToStringRecursive(oss, h_data, node->owned_grad->get_shape(),
+                                node->owned_grad->get_ndim(), 0, 0);
+    }
+    oss << ")";
+    cout << oss.str() << endl;
+}
