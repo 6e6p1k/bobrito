@@ -2,8 +2,10 @@
 
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 
 #include "shape_data.h"
+#include "graph_viz.h"
 
 using namespace std;
 
@@ -47,6 +49,15 @@ int* Node::get_strides() {
 
 void Node::set_label(string new_label) { label = new_label; }
 
+void Node::export_graph(string filename) {
+    string dot_filename = filename + ".dot";
+    export_dot_full(this, dot_filename.c_str());
+    string command = "dot -Tpdf " + dot_filename + " -o " + filename + ".pdf";
+    int status = system(command.c_str());
+    if (status != 0) throw logic_error("Graph export failed.");
+    else cout << "Graph was successfully exported to file '" << filename << ".pdf'\n";
+}
+
 std::shared_ptr<Node> make_node(Primitive* prim,
                                 std::vector<std::shared_ptr<Node>> inputs,
                                 int* shape, int ndim) {
@@ -55,9 +66,15 @@ std::shared_ptr<Node> make_node(Primitive* prim,
     node->h_meta = make_shape_data(ndim, shape);
     node->d_data = make_shared<ContentData>();
 
+    bool is_bwd = false;
     for (auto input : inputs) {
         node->inputs.push_back(input);
-        input->outputs.push_back(node);
+        is_bwd += input->is_bwd;
+    }
+    node->is_bwd = is_bwd;
+    if (is_bwd) {
+        for (auto input : inputs)
+            input->outputs.push_back(node);
     }
     return node;
 }
@@ -66,6 +83,7 @@ std::shared_ptr<Node> copy_node_no_prim(shared_ptr<Node> node) {
     shared_ptr<Node> out_node = make_shared<Node>();
     out_node->h_meta = node->h_meta;
     out_node->d_data = node->d_data;
+    out_node->is_bwd = node->is_bwd;
     out_node->set_label(node->label + ".copy()");
     return out_node;
 }

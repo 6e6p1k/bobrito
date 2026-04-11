@@ -1,8 +1,9 @@
 // ALL OPS
 #include <cublas_v2.h>
-#include <string.h>
-
 #include <cub/cub.cuh>
+#include <curand.h>
+
+#include <string.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -18,6 +19,7 @@
 #define SCALAR(n) (static_pointer_cast<ScalarNode>(n))
 
 using namespace std;
+static int g_seed = 0;
 
 // ============================================================
 //                         LEAF INITIATION
@@ -248,7 +250,6 @@ shared_ptr<Node> arange(int* shape, int ndim, float start, float step) {
 }
 
 shared_ptr<Node> arange(vector<int> shape, int start, int step) {
-    auto node = _empty_leaf_node(shape);
     return arange(shape.data(), shape.size(), start, step);
 }
 
@@ -260,6 +261,97 @@ shared_ptr<Node> arange(int start, int end, int step) {
                         to_string(end) + ", step=" + to_string(step) + ")");
     return out_node;
 }
+
+// ============================================================
+//                     UNIFORM
+// ============================================================
+static struct : Primitive {
+    void eval(Node* node) override {
+        int n = node->get_size();
+        float limit = SCALAR(node->inputs[0])->value;
+        curandGenerator_t gen;
+        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+        curandSetPseudoRandomGeneratorSeed(gen, g_seed++);
+        curandGenerateUniform(gen, node->get_data(), n);
+        curandDestroyGenerator(gen);
+
+        kernels::scale<<<GRID_SIZE(n), BLOCK_SIZE>>>
+            (node->get_data(), limit, n);
+    }
+    const string name() override { return "Uniform"; }
+    const string symbol() override { return "uniform"; }
+} prim_uniform;
+
+shared_ptr<Node> uniform(int* shape, int ndim, float limit) {
+    shared_ptr<ScalarNode> scalar = make_scalar_node(limit, "limit");
+    shared_ptr<Node> out_node = make_node(&prim_uniform, {scalar}, shape, ndim);
+    out_node->set_label("uniform(" + to_string((int)limit) + ")");
+    return out_node;
+}
+
+shared_ptr<Node> xavier_uniform(int* shape, int ndim) {
+    float limit = sqrtf(6.0f / (shape[0] + shape[ndim - 1]));
+    return uniform(shape, ndim, limit);
+}
+
+shared_ptr<Node> uniform(vector<int> shape, float limit) {
+    return uniform(shape.data(), shape.size(), limit);
+}
+
+shared_ptr<Node> xavier_uniform(vector<int> shape) {
+    return xavier_uniform(shape.data(), shape.size());
+}
+
+// ============================================================
+//                     NORMAL
+// ============================================================
+static struct : Primitive {
+    void eval(Node* node) override {
+        int n = node->get_size();
+        if (n % 2 != 0) throw logic_error("Size should be even.");
+
+        float mean = SCALAR(node->inputs[0])->value;
+        float std = SCALAR(node->inputs[1])->value;
+        
+        curandGenerator_t gen;
+        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+        curandSetPseudoRandomGeneratorSeed(gen, g_seed++);
+        curandGenerateNormal(gen, node->get_data(), n, mean, std);
+        curandDestroyGenerator(gen);
+    }
+    const string name() override { return "Normal"; }
+    const string symbol() override { return "normal"; }
+} prim_normal;
+
+shared_ptr<Node> normal(int* shape, int ndim, float mean, float std) {
+    shared_ptr<ScalarNode> scalar_mean = make_scalar_node(mean, "mean");
+    shared_ptr<ScalarNode> scalar_std = make_scalar_node(std, "std");
+
+    shared_ptr<Node> out_node = make_node(&prim_normal, {scalar_mean, scalar_std}, shape, ndim);
+    out_node->set_label("uniform(" + to_string((int)mean) + to_string((int)std) + ")");
+    return out_node;
+}
+
+shared_ptr<Node> kaiming_normal(int* shape, int ndim) {
+    return normal(shape, ndim, 0, sqrtf(2.0 / shape[0]));
+}
+
+shared_ptr<Node> xavier_normal(int* shape, int ndim) {
+    return normal(shape, ndim, 0, sqrtf(2.0 / (shape[0] + shape[ndim - 1])));
+}
+
+shared_ptr<Node> normal(vector<int> shape, float mean, float std) {
+    return normal(shape.data(), shape.size(), mean, std);
+}
+
+shared_ptr<Node> kaiming_normal(vector<int> shape) {
+    return kaiming_normal(shape.data(), shape.size());
+}
+
+shared_ptr<Node> xavier_normal(vector<int> shape) {
+    return xavier_normal(shape.data(), shape.size());
+}
+
 // -----------------------------------------------------------------
 //                          ELEMWISE
 // -----------------------------------------------------------------
@@ -289,8 +381,8 @@ static struct : Primitive {
     void eval(Node* node) override { elemwise_eval<cuAdd>(node); }
     void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
              shared_ptr<Node> out[]) override {
-        out[0] = skip(bwd);
-        out[1] = skip(bwd);
+        out[0] = bwd;
+        out[1] = bwd;
     }
     const string name() override { return "Add"; }
     const string symbol() override { return "+"; }
@@ -307,8 +399,8 @@ static struct : Primitive {
     void eval(Node* node) override { elemwise_eval<cuSub>(node); }
     void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
              shared_ptr<Node> out[]) override {
-        out[0] = skip(bwd);
-        out[1] = neg(bwd);
+        out[0] = bwd;
+        out[1] = bwd;
     }
     const string name() override { return "Sub"; }
     const string symbol() override { return "-"; }
@@ -361,7 +453,12 @@ shared_ptr<Node> div(shared_ptr<Node> a, shared_ptr<Node> b) {
 //                          POW
 // ============================================================
 static struct : Primitive {
-    void eval(Node* node) override { elemwise_eval<cuPow>(node); }
+    void eval(Node* node) override {
+        float exp = SCALAR(node->inputs[1])->value;
+        int n = node->get_size();
+        kernels::pow_scalar<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+            node->inputs[0]->get_data(), exp, node->get_data(), n);
+    }
     void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
              shared_ptr<Node> out[]) override {}
     const string name() override { return "Pow"; }
@@ -781,6 +878,9 @@ static struct : Primitive {
         out[0] = reshape(bwd, fwd->inputs[0]->get_shape(),
                          fwd->inputs[0]->get_ndim());
     }
+    void allocate(Node* node) override {
+        node->d_data = node->inputs[0]->d_data; // share buffer
+    }
     const string name() override { return "Reshape"; }
     const string symbol() override { return "reshape"; }
 } prim_reshape;
@@ -798,26 +898,6 @@ shared_ptr<Node> reshape(shared_ptr<Node> a, int* new_shape, int new_ndim) {
     shared_ptr<Node> out_node =
         make_node(&prim_reshape, {a}, new_shape, new_ndim);
     out_node->set_label(a->label + ".reshape()");
-    return out_node;
-}
-
-// ============================================================
-//                         SKIP
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {}
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Skip"; }
-    const string symbol() override { return "skip"; }
-} prim_skip;
-
-shared_ptr<Node> skip(shared_ptr<Node> a) {
-    shared_ptr<Node> out_node =
-        make_node(&prim_skip, {a}, a->get_shape(), a->get_ndim());
-    out_node->d_data = a->d_data;
-    out_node->h_meta = a->h_meta;
-    out_node->set_label(a->label + ".skip()");
     return out_node;
 }
 
@@ -865,26 +945,55 @@ shared_ptr<Node> reduce_to_shape(shared_ptr<Node> a, vector<int> out_shape) {
 }
 
 // ============================================================
-//                     SUM (complex shape logic)
+//                        LINEAR
 // ============================================================
-// static struct : Primitive {
-//     void eval(Node* node) override { sum_last_dim_eval(node); }
-//     void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-//              shared_ptr<Node> out[]) override {
-//         out[0] = expand_last_dim(dC, fwd->inputs[0]->h_meta->shape(),
-//                                  fwd->inputs[0]->h_meta->ndim);
-//     }
-//     const string name() override { return "SumLD"; }
-//     const string symbol() override { return "∑"; }
-// } prim_sum_ld;
+static struct : Primitive {
+    void eval(Node* node) override {}
+    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+             shared_ptr<Node> out[]) override {}
+    const string name() override { return "Linear"; }
+    const string symbol() override { return "linear"; }
+} prim_linear;
 
-// // sum() has complex decomposition logic, that's fine —
-// // it lives right next to its primitive
-// shared_ptr<Node> sum(shared_ptr<Node> a, int dim, bool keepdims) {
-//     int ndim = a->h_meta->ndim;
-//     dim = (dim + ndim) % ndim;
-//     if (dim == ndim - 1 && !keepdims) return make_node(&prim_sum_ld, {a},
-//     ...);
-//     // transpose → contiguous → reduce_last_dim → reshape
-//     // ... your existing decomposition logic
-// }
+shared_ptr<Node> linear(shared_ptr<Node> a, int out_dim) {
+    int in_dim = a->get_shape()[a->get_ndim() - 1];
+    int w_shape[2] = {in_dim, out_dim};
+    int b_shape[2] = {1, out_dim};
+    auto W = xavier_normal(w_shape, 2);
+    auto b = full(b_shape, 2, 0.0f);
+    W->requires_grad = true;
+    b->requires_grad = true;
+    return add(matmul(a, W), b);
+}
+
+// ============================================================
+//                        LINEAR
+// ============================================================
+static struct : Primitive {
+    void eval(Node* node) override {}
+    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+             shared_ptr<Node> out[]) override {}
+    const string name() override { return "Softmax"; }
+    const string symbol() override { return "softmax"; }
+} prim_softmax;
+
+shared_ptr<Node> cross_entropy(shared_ptr<Node> logits, shared_ptr<Node> targets) {
+    // stable log-softmax
+    auto maxes = max_ld(logits);           // [batch, 1]
+    auto shifted = sub(logits, maxes);      // [batch, classes]
+    auto exp_shifted = exp(shifted);        // [batch, classes]
+    auto sum_exp = sum_ld(exp_shifted);     // [batch, 1]  
+    auto log_sum = log(sum_exp);            // [batch, 1]
+    auto log_softmax = sub(shifted, log_sum); // [batch, classes]
+    
+    // cross entropy: -sum(targets * log_softmax) / batch
+    auto prod = mul(targets, log_softmax);  // [batch, classes]
+    auto sum_all = sum_ld(prod);            // [batch, 1]
+    auto neg_sum_all = neg(sum_all);
+    auto loss = mul(neg_sum_all, pow(full({logits->get_shape()[0]}, logits->get_shape()[0]), -1));
+    return loss;
+}
+
+
+
+

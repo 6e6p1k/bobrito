@@ -64,9 +64,18 @@ __global__ void fused_bwd_pow(float* mantissa, float exponent, float* prev_grad,
     if (i < n) new_grad[i] = prev_grad[i] * exponent * powf(mantissa[i], (exponent - 1.0f));
 }
 
+__global__ void pow_scalar(float* in, float exponent, float* out, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) out[i] = powf(in[i], exponent);
+}
+
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) weight_data[i] -= grad_data[i] * lr;
 }
 
+__global__ void scale(float* data, float limit, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) data[i] = data[i] * 2.0f * limit - limit;
+}
 }

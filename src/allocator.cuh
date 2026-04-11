@@ -101,7 +101,6 @@ struct ContentData
 
     ~ContentData()
     {
-        // std::cout << "~ContentData: " << this << " b_ptr=" << b_ptr << std::endl;
         if (b_ptr) MemoryPool::call().free(b_ptr);
     }
 

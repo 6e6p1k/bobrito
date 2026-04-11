@@ -156,11 +156,11 @@ static void dot_emit_node_full(ofstream& out, Node* node,
 
     // backward edges: node → outputs (cyan arrows)
     for (auto& outp : node->outputs) {
-        if (!outp) continue;
-        string child_id = "n" + to_string((uintptr_t)outp.get());
+        if (outp.expired()) continue;
+        string child_id = "n" + to_string((uintptr_t)outp.lock().get());
         out << "    " << id << " -> " << child_id
             << " [color=\"#00ffff\" penwidth=3 arrowsize=1.2];\n";
-        dot_emit_node_full(out, outp.get(), visited_nodes, visited_edges);
+        dot_emit_node_full(out, outp.lock().get(), visited_nodes, visited_edges);
     }
 }
 
@@ -178,10 +178,37 @@ static void find_roots(Node* node, unordered_set<Node*>& visited,
         find_roots(inp.get(), visited, roots);
 }
 
-void export_dot_full(Node* start, const char* filename) {
-    unordered_set<Node*> visited_roots;
-    vector<Node*> roots;
-    find_roots(start, visited_roots, roots);
+// void export_dot_full(Node* start, const char* filename) {
+//     unordered_set<Node*> visited_roots;
+//     vector<Node*> roots;
+//     find_roots(start, visited_roots, roots);
+
+//     ofstream out(filename);
+//     out << "digraph FullGraph {\n"
+//         << "    rankdir=BT;\n"
+//         << "    bgcolor=\"#000000\";\n"
+//         << "    pad=1.2;\n"
+//         << "    nodesep=1.5;\n"
+//         << "    ranksep=1.5;\n"
+//         << "    node [fontname=\"Ubuntu\" fontsize=12 margin=\"0.2,0.1\" fontcolor=\"#FFFFFF\" width=0 height=0];\n"
+//         << "    edge [fontname=\"Ubuntu\" fontsize=9];\n\n";
+
+//     string start_id = "n" + to_string((uintptr_t)start);
+//     out << "    " << start_id << " [penwidth=4 color=\"#FF5722\"];\n\n";
+
+//     unordered_set<Node*> visited_nodes;
+//     unordered_set<Node*> visited_edges;
+//     for (auto* root : roots)
+//         dot_emit_node_full(out, root, visited_nodes, visited_edges);
+
+//     out << "}\n";
+//     out.close();
+
+//     // cout << "Full graph written to " << filename << endl;
+//     // cout << "Render with:  dot -Tpdf " << filename << " -o full.pdf" << endl;
+// }
+
+void export_dot_full(Node* root, const char* filename) {
 
     ofstream out(filename);
     out << "digraph FullGraph {\n"
@@ -193,17 +220,16 @@ void export_dot_full(Node* start, const char* filename) {
         << "    node [fontname=\"Ubuntu\" fontsize=12 margin=\"0.2,0.1\" fontcolor=\"#FFFFFF\" width=0 height=0];\n"
         << "    edge [fontname=\"Ubuntu\" fontsize=9];\n\n";
 
-    string start_id = "n" + to_string((uintptr_t)start);
+    string start_id = "n" + to_string((uintptr_t)root);
     out << "    " << start_id << " [penwidth=4 color=\"#FF5722\"];\n\n";
 
     unordered_set<Node*> visited_nodes;
     unordered_set<Node*> visited_edges;
-    for (auto* root : roots)
-        dot_emit_node_full(out, root, visited_nodes, visited_edges);
+    dot_emit_node_full(out, root, visited_nodes, visited_edges);
 
     out << "}\n";
     out.close();
 
-    cout << "Full graph written to " << filename << endl;
-    cout << "Render with:  dot -Tpdf " << filename << " -o full.pdf" << endl;
+    // cout << "Full graph written to " << filename << endl;
+    // cout << "Render with:  dot -Tpdf " << filename << " -o full.pdf" << endl;
 }

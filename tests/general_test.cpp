@@ -223,7 +223,7 @@ void test_mul_grad_b() {
 // ------ NEG ------
 // c = -a,  dc/da = -1
 void test_neg_grad() {
-    auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "a", true);
+    auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "specific_a", true);
     auto c = neg(a);
     backward(c);
     eval(c);

@@ -2,12 +2,15 @@
 
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "allocator.cuh"
 #include "nodes.h"
 #include "ops.h"
+#include "evaluate.h"
 
 using namespace std;
 
@@ -37,12 +40,10 @@ void set_grad_and_traverse(shared_ptr<Node> fwd_node, shared_ptr<Node> new_grad,
                            unordered_map<Node*, int>& remaining) {
     // accumulate
     shared_ptr<Node> final_grad;
-    if (fwd_node->grad_buffer)
-        {
-            fwd_node->grad_buffer->set_label(fwd_node->label + "_partial_grad");
-            final_grad = add(fwd_node->grad_buffer, new_grad);
-        }
-    else
+    if (fwd_node->grad_buffer) {
+        fwd_node->grad_buffer->set_label(fwd_node->label + "_partial_grad");
+        final_grad = add(fwd_node->grad_buffer, new_grad);
+    } else
         final_grad = new_grad;
     final_grad->set_label(fwd_node->label + "_grad");
     // final_grad->d_data = make_shared<ContentData>();
@@ -52,7 +53,7 @@ void set_grad_and_traverse(shared_ptr<Node> fwd_node, shared_ptr<Node> new_grad,
     // if leaf node (only those can have requires_grad = true),
     // just store the grad
     if (fwd_node->requires_grad) {
-        if (fwd_node->requires_grad) fwd_node->owned_grad = final_grad;
+        fwd_node->owned_grad = final_grad;
     }
 
     // not all upstream grads arrived yet — stash and wait
@@ -70,17 +71,26 @@ void set_grad_and_traverse(shared_ptr<Node> fwd_node, shared_ptr<Node> new_grad,
 // broadcasting, wire them up.
 void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
                     unordered_map<Node*, int>& remaining) {
-    if (fwd_node->inputs.size() == 0) return;
+    if (fwd_node->inputs.size() <= 0 || fwd_node->requires_grad) return;
     if (!fwd_node->prim) return;
 
     // ask the op for raw gradients
     shared_ptr<Node> grads[4] = {};
     fwd_node->prim->vjp(fwd_node, bwd_node, grads);
 
+    // go through grads and remove leaf nodes in which requires_grad = false
+
     // wire up each input
     for (int i = 0; i < fwd_node->inputs.size(); i++) {
         if (!grads[i]) continue;
-
+        // check if node is leaf but doesn't require grad (eg x in x @ W + b)
+        bool requires_grad = fwd_node->inputs[i]->requires_grad;
+        bool is_leaf = fwd_node->inputs[i]->inputs.size() == 0;
+        if (is_leaf && !requires_grad) {
+            // remove useless grads from outputs to avoid computing them
+            bwd_node->outputs[i].reset();
+            continue;
+        }
         auto input = fwd_node->inputs[i];
 
         // handle broadcasting: reduce grad to input's shape
@@ -89,13 +99,20 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
 
         set_grad_and_traverse(input, reduced, remaining);
     }
+
+    // go through bwdnode-> outputs vector
+    // and remove all the nullptrs
+    bwd_node->outputs.erase(
+        std::remove_if(bwd_node->outputs.begin(), bwd_node->outputs.end(),
+                       [](const weak_ptr<Node>& w) { return w.expired(); }),
+        bwd_node->outputs.end());
 }
 
 // ============================================================
-//                       EVAL HELPER
+//                       TOPO HELPERS
 // ============================================================
 void build_topo_inputs(Node* node, unordered_set<Node*>& visited,
-                    vector<Node*>& order) {
+                       vector<Node*>& order) {
     if (visited.count(node)) return;
     visited.insert(node);
     for (auto& inp : node->inputs) build_topo_inputs(inp.get(), visited, order);
@@ -103,21 +120,31 @@ void build_topo_inputs(Node* node, unordered_set<Node*>& visited,
 }
 
 void build_topo_outputs(Node* node, unordered_set<Node*>& visited,
-                    vector<Node*>& order) {
+                        vector<Node*>& order) {
+    // skip nodes that were freed (dead-end backward branches produce
+    // expired weak_ptrs in outputs when no requires_grad path uses them)
+    if (!node) return;
     if (visited.count(node)) return;
     visited.insert(node);
     // push before children (pre-order traversal)
-    order.push_back(node); // bc we need to go from root node to leafs
-    for (auto& out : node->outputs) build_topo_outputs(out.get(), visited, order);
+    order.push_back(node);  // bc we need to go from root node to leafs
+    for (auto& out : node->outputs)
+        build_topo_outputs(out.lock().get(), visited, order);
 }
 
+vector<Node*> evaluate_fwd_find_leaf_grads(vector<Node*>);
+
 void eval_helper(vector<Node*>& fwd_order, vector<Node*>& bwd_order) {
+    vector<Node*> require_grad;
+
     for (Node* node : fwd_order) {
         if (!node->is_meta()) continue;
         int size = node->get_size();
         if (!node->is_data()) node->d_data = make_shared<ContentData>();
         if (!node->is_data_allocated()) node->d_data->allocate(size);
         node->prim->eval(node);
+
+        if (node->requires_grad) require_grad.push_back(node);
     }
 
     for (Node* node : bwd_order) {
@@ -134,37 +161,108 @@ void eval_helper(vector<Node*>& fwd_order, vector<Node*>& bwd_order) {
 }
 
 // ============================================================
-//                       PUBLIC API
+//                       GRAPH
 // ============================================================
+Graph::Graph(shared_ptr<Node> loss, bool disposable) {
+    root = loss;
+    compute_fwd_order();
+    locate_leaf_w_grad_nodes();
+    this->disposable = disposable;
+}
 
-void backward(shared_ptr<Node> loss) {
-    if (loss->requires_grad || loss->inputs.size() == 0)
+void Graph::backward() {
+    if (need_backward()) {
+        _backward();
+        compute_bwd_order();
+    }
+}
+
+void Graph::eval() {
+    fwd_pass();
+    bwd_pass();
+    if (disposable) detach_grads_from_bwd_graph();
+}
+
+// CHECKS
+bool Graph::is_root() { return root != nullptr; }
+
+bool Graph::is_backward() {
+    if (root->outputs.size() != 1) return false;
+    if (root->outputs[0].expired()) return false;
+    return (root->outputs[0].lock()->label == "BWD_START");
+}
+
+bool Graph::need_backward() {
+    if (require_grad_nodes.size() == 0) locate_leaf_w_grad_nodes();
+    return (require_grad_nodes.size() > 0);
+}
+
+// FUNCS
+void Graph::compute_fwd_order() {
+    if (!is_root()) throw logic_error("Root node is nullptr!");
+    unordered_set<Node*> visited;
+    build_topo_inputs(root.get(), visited, fwd_order);
+}
+
+void Graph::compute_bwd_order() {
+    if (!is_root()) throw logic_error("Root node is nullptr!");
+    unordered_set<Node*> visited;
+    build_topo_outputs(root.get(), visited, bwd_order);
+}
+
+void Graph::locate_leaf_w_grad_nodes() {
+    if (require_grad_nodes.size() > 0)
+        throw logic_error("require_grad_nodes is already filled.");
+    for (Node* node : fwd_order) {
+        if (!node->is_meta()) continue;
+        if (node->requires_grad) require_grad_nodes.push_back(node);
+    }
+}
+
+void Graph::pass(vector<Node*> order) {
+    for (Node* node : order) {
+        if (!node->is_meta()) continue;
+        int size = node->get_size();
+        node->prim->allocate(node);
+        node->prim->eval(node);
+    }
+}
+
+void Graph::fwd_pass() { return pass(fwd_order); }
+void Graph::bwd_pass() { return pass(bwd_order); }
+
+void Graph::_backward() {
+    if (root->requires_grad || root->inputs.size() == 0)
         throw logic_error("Cannot call backward() on a source node.");
 
     // seed: gradient of loss w.r.t. itself = 1
-    auto seed = full(loss->get_shape(), loss->get_ndim(), 1.0f);
+    auto seed = full(root->get_shape(), root->get_ndim(), 1.0f);
     seed->set_label("BWD_START");
-    loss->outputs.push_back(seed);
+    seed->is_bwd = true;
+    root->outputs.push_back(seed);
 
     // count how many consumers each node has
     unordered_map<Node*, int> uses;
     unordered_set<Node*> visited;
-    count_uses(loss, uses, visited);
+    count_uses(root, uses, visited);
 
-    // kick off
-    build_backward(loss, seed, uses);
+    build_backward(root, seed, uses);
+}
+
+void Graph::detach_grads_from_bwd_graph() {
+    for (auto grad_leaf : require_grad_nodes)
+        grad_leaf->owned_grad = copy_node_no_prim(grad_leaf->owned_grad);
+}
+// ============================================================
+//                       PUBLIC API
+// ============================================================
+shared_ptr<Graph> make_model(shared_ptr<Node> root) {
+    auto g = make_shared<Graph>(root, false);
+    return g;
 }
 
 void eval(shared_ptr<Node> root) {
-    vector<Node*> fwd_order;
-    vector<Node*> bwd_order;
-    if (root->inputs.size() > 0) {
-        unordered_set<Node*> visited;
-        build_topo_inputs(root.get(), visited, fwd_order);
-    }
-    if (root->outputs.size() == 1 && root->outputs[0]->label == "BWD_START") {
-        unordered_set<Node*> visited;
-        build_topo_outputs(root->outputs[0].get(), visited, bwd_order);
-    }
-    eval_helper(fwd_order, bwd_order);
+    Graph g = Graph(root, true);
+    g.backward();
+    g.eval();
 }

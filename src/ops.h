@@ -34,7 +34,6 @@ std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims);
 // tools 
 std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a);
 std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* shape, int ndim);
-std::shared_ptr<Node> skip(std::shared_ptr<Node> a);
 std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> a, int* out_shape, int out_ndim);
 std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> a, std::vector<int> out_shape);
 
@@ -44,6 +43,16 @@ std::shared_ptr<Node> full(int* shape, int ndim, float fill_val);
 std::shared_ptr<Node> full(std::vector<int> shape, float fill_val);
 std::shared_ptr<Node> arange(std::vector<int> shape, int start, int step = 1);
 std::shared_ptr<Node> arange(int start, int end, int step = 1);
+std::shared_ptr<Node> uniform(int* shape, int ndim, float limit = 1);
+std::shared_ptr<Node> uniform(std::vector<int> shape, float limit);
+std::shared_ptr<Node> xavier_uniform(int* shape, int ndim);
+std::shared_ptr<Node> xavier_uniform(std::vector<int> shape);
+std::shared_ptr<Node> normal(int* shape, int ndim, float mean, float std);
+std::shared_ptr<Node> normal(std::vector<int> shape, float mean, float std);
+std::shared_ptr<Node> xavier_normal(int* shape, int ndim);
+std::shared_ptr<Node> xavier_normal(std::vector<int> shape);
+std::shared_ptr<Node> kaiming_normal(int* shape, int ndim);
+std::shared_ptr<Node> kaiming_normal(std::vector<int> shape);
 
 
 

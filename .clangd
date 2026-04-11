@@ -1,7 +1,7 @@
-<!-- CompileFlags:
-  Add:
-    - "-std=c++17"
-    - "-Isrc"
-    - "[-I/home/hz/miniforge3/envs/main/include/python3.12 -I/home/hz/miniforge3/envs/main/lib/python3.12/site-packages/pybind11/include]"
-    - "-I/home/hz/miniforge3/envs/main/include/python3.12"
-    - "-I/home/hz/miniforge3/envs/main/lib/python3.12/site-packages/pybind11/include" -->
+CompileFlags:
+    Add:
+        - "-std=c++17"
+        - "-Isrc"
+        - "[-I/home/hz/miniforge3/envs/main/include/python3.12 -I/home/hz/miniforge3/envs/main/lib/python3.12/site-packages/pybind11/include]"
+        - "-I/home/hz/miniforge3/envs/main/include/python3.12"
+        - "-I/home/hz/miniforge3/envs/main/lib/python3.12/site-packages/pybind11/include"

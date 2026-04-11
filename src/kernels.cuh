@@ -52,5 +52,7 @@ __global__ void expand_last_dim(float* src, float* dst, int last_dim, int n);
 __global__ void relu(float* src, float* dst, int n);
 __global__ void bwd_relu(float* fwd_data, float* prev_grad, float* new_grad, int n);
 __global__ void fused_bwd_pow(float* mantissa, float exponent, float* prev_grad, float* new_grad, int n);
+__global__ void pow_scalar(float* in, float exponent, float* out, int n);
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n);
+__global__ void scale(float* data, float limit, int n);
 }
