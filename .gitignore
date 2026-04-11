@@ -83,3 +83,6 @@ Testing/
 
 # pictures, .dot outputs
 out/
+
+# legacy code
+legacy/
