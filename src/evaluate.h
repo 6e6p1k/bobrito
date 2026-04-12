@@ -35,4 +35,4 @@ struct Graph {
 };
 std::shared_ptr<Graph> make_model(std::shared_ptr<Node> root);
 void backward(std::shared_ptr<Node> loss);
-void eval(std::shared_ptr<Node> root);
+void eval(std::shared_ptr<Node> root, bool export_graph = false);

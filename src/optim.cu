@@ -1,10 +1,13 @@
 #include "evaluate.h"
 #include "kernels.cuh"
 
+
+using namespace std;
+
 void Graph::sgd_step(float lr) {
     for (auto node : require_grad_nodes) {
         if (!node->owned_grad || !node->owned_grad->is_data_allocated())
-            throw std::logic_error("sgd_step: missing grad for node '" +
+            throw logic_error("sgd_step: missing grad for node '" +
                                    node->label + "'");
         int n = node->get_size();
         kernels::sgd<<<(n + 255) / 256, 256>>>(

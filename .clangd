@@ -1,7 +1,14 @@
 CompileFlags:
-    Add:
-        - "-std=c++17"
-        - "-Isrc"
-        - "[-I/home/hz/miniforge3/envs/main/include/python3.12 -I/home/hz/miniforge3/envs/main/lib/python3.12/site-packages/pybind11/include]"
-        - "-I/home/hz/miniforge3/envs/main/include/python3.12"
-        - "-I/home/hz/miniforge3/envs/main/lib/python3.12/site-packages/pybind11/include"
+  Add:
+    - -I/usr/local/cuda/include
+    - -I/home/you/miniconda3/envs/cuda/include/python3.11
+    - -I/home/you/miniconda3/envs/cuda/lib/python3.11/site-packages/pybind11/include
+    - -std=c++17
+    - --cuda-gpu-arch=sm_120
+    - --include-directory=/usr/include/c++/13
+    - --include-directory=/usr/include/x86_64-linux-gnu/c++/13
+    - --include-directory=/usr/local/cuda-13.2/targets/x86_64-linux/include/cccl
+  Remove:
+    - -forward-unknown-to-host-compiler  # nvcc flags that confuse clangd
+    - --generate-code*
+    - -Xcompiler*

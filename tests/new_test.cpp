@@ -9,32 +9,33 @@
 
 #include "../src/nodes.h"
 #include "../src/ops.h"
+#include "../src/evaluate.h"
 
 using namespace std;
 
 // ============================================================
 //                       EVAL HELPER
 // ============================================================
-void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order) {
-    if (visited.count(node)) return;
-    visited.insert(node);
-    for (auto& inp : node->inputs)
-        build_topo(inp.get(), visited, order);
-    order.push_back(node);
-}
+// void build_topo(Node* node, unordered_set<Node*>& visited, vector<Node*>& order) {
+//     if (visited.count(node)) return;
+//     visited.insert(node);
+//     for (auto& inp : node->inputs)
+//         build_topo(inp.get(), visited, order);
+//     order.push_back(node);
+// }
 
-void eval(shared_ptr<Node> root) {
-    unordered_set<Node*> visited;
-    vector<Node*> order;
-    build_topo(root.get(), visited, order);
-    for (Node* node : order) {
-        if (!node->is_meta()) continue;
-        int size = node->get_size();
-        if (!node->is_data()) node->d_data = make_shared<ContentData>();
-        if (!node->is_data_allocated()) node->d_data->allocate(size);
-        node->prim->eval(node);
-    }
-}
+// void eval(shared_ptr<Node> root) {
+//     unordered_set<Node*> visited;
+//     vector<Node*> order;
+//     build_topo(root.get(), visited, order);
+//     for (Node* node : order) {
+//         if (!node->is_meta()) continue;
+//         int size = node->get_size();
+//         if (!node->is_data()) node->d_data = make_shared<ContentData>();
+//         if (!node->is_data_allocated()) node->d_data->allocate(size);
+//         node->prim->eval(node);
+//     }
+// }
 
 // ============================================================
 //                       TEST RUNNER
@@ -236,6 +237,12 @@ void test_labels() {
     check(log(a)->label     == "a.log()",  "log label");
 }
 
+void test_cross_entropy_shape() {
+    auto logits  = make_leaf_node({4, 3}, vector<float>(12, 0.0f));
+    auto targets = make_leaf_node({4, 3}, vector<float>(12, 0.0f));
+    check_shape(cross_entropy(logits, targets), {4});
+}
+
 // ============================================================
 //                   EVAL TESTS  (CUDA required)
 // ============================================================
@@ -353,6 +360,36 @@ void test_matmul_values() {
     check_values(c, {7, 10, 15, 22});
 }
 
+void test_cross_entropy_uniform_logits() {
+    // logits = [[0,0,0]], targets = [[1,0,0]]
+    // log_softmax = -log(3) for each class → loss = log(3) / 1
+    auto logits  = make_leaf_node({1, 3}, {0.0f, 0.0f, 0.0f});
+    auto targets = make_leaf_node({1, 3}, {1.0f, 0.0f, 0.0f});
+    auto loss = cross_entropy(logits, targets);
+    eval(loss);
+    check_values(loss, {std::log(3.0f)}, 1e-4f);
+}
+
+void test_cross_entropy_perfect_prediction() {
+    // logits strongly favour class 0, target is class 0 → loss ≈ 0
+    auto logits  = make_leaf_node({1, 3}, {10.0f, -10.0f, -10.0f});
+    auto targets = make_leaf_node({1, 3}, {1.0f,   0.0f,   0.0f});
+    auto loss = cross_entropy(logits, targets);
+    eval(loss);
+    check_values(loss, {0.0f}, 1e-2f);
+}
+
+void test_cross_entropy_batch() {
+    // logits = [[1,0],[0,1]], targets = [[1,0],[0,1]]
+    // each sample: neg_loss_i = log(1 + e^-1); divided by batch=2
+    float expected = std::log(1.0f + std::exp(-1.0f)) / 2.0f;
+    auto logits  = make_leaf_node({2, 2}, {1.0f, 0.0f, 0.0f, 1.0f});
+    auto targets = make_leaf_node({2, 2}, {1.0f, 0.0f, 0.0f, 1.0f});
+    auto loss = cross_entropy(logits, targets);
+    eval(loss);
+    check_values(loss, {expected, expected}, 1e-4f);
+}
+
 void test_chained_eval() {
     // relu([-1,0,1] + [2,2,2]) = relu([1,2,3]) = [1,2,3]
     auto a = make_leaf_node({3}, {-1.0f, 0.0f, 1.0f});
@@ -390,6 +427,7 @@ int main() {
     RUN(test_reshape_shape);
     RUN(test_reshape_numel_mismatch_throws);
     RUN(test_labels);
+    RUN(test_cross_entropy_shape);
 
     if (cuda_available()) {
         cout << "\n=== Eval / value tests (CUDA) ===\n";
@@ -409,6 +447,9 @@ int main() {
         RUN(test_min_ld_values);
         RUN(test_matmul_values);
         RUN(test_chained_eval);
+        RUN(test_cross_entropy_uniform_logits);
+        RUN(test_cross_entropy_perfect_prediction);
+        RUN(test_cross_entropy_batch);
     } else {
         cout << "\n[SKIP] No CUDA device — skipping eval tests\n";
     }

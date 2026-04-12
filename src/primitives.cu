@@ -21,6 +21,14 @@
 using namespace std;
 static int g_seed = 0;
 
+void CUDA_CHECK() {
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) { 
+        printf("CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
+        exit(1); 
+    }
+}
+
 // ============================================================
 //                         LEAF INITIATION
 // ============================================================
@@ -438,15 +446,35 @@ static struct : Primitive {
     void eval(Node* node) override { elemwise_eval<cuDiv>(node); }
     const string name() override { return "Div"; }
     const string symbol() override { return "/"; }
-} prim_div;
+    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+             shared_ptr<Node> out[]) override {
+        auto A = copy_node_no_prim(fwd->inputs[0]);
+        auto B = copy_node_no_prim(fwd->inputs[1]);
 
-// shared_ptr<Node> div(shared_ptr<Node> a, shared_ptr<Node> b) {
-//     auto _1_over_b = pow(b, -1);
-//     return mul(a, _1_over_b);
-// }
+        out[0] = div(bwd, B);
+        out[1] = bwd_div(fwd, bwd);
+    }
+} prim_div;
 
 shared_ptr<Node> div(shared_ptr<Node> a, shared_ptr<Node> b) {
     return elemwise_helper(&prim_div, a, b);
+}
+
+// ============================================================
+//                          BWD_DIV
+// ============================================================
+static struct : Primitive {
+    void eval(Node* node) override { 
+        int n = node->get_size();
+        kernels::bwd_div<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+            node->inputs[0]->get_data(), node->get_data(), node->inputs[2]->get_data(), n);
+    }
+    const string name() override { return "BwdDiv"; }
+    const string symbol() override { return "bwd_div"; }
+} prim_bwd_div;
+
+shared_ptr<Node> bwd_div(shared_ptr<Node> fwd, shared_ptr<Node> bwd) {
+    return elemwise_helper(&prim_bwd_div, fwd, bwd);
 }
 
 // ============================================================
@@ -454,21 +482,23 @@ shared_ptr<Node> div(shared_ptr<Node> a, shared_ptr<Node> b) {
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override {
-        float exp = SCALAR(node->inputs[1])->value;
         int n = node->get_size();
-        kernels::pow_scalar<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), exp, node->get_data(), n);
+        kernels::pow<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+            node->inputs[0]->get_data(), node->inputs[1]->get_data(), node->get_data(), n);
     }
+    // c = a ^ scalar
+    // dc/da = dc/dc * dc/da = bwd * (a^(scalar-1) * scalar) = bwd * (c/a * scalar)
     void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {}
+             shared_ptr<Node> out[]) override {
+                out[0] = bwd_pow(fwd, bwd);
+             }
     const string name() override { return "Pow"; }
     const string symbol() override { return "^"; }
 } prim_pow;
 
-shared_ptr<Node> pow(shared_ptr<Node> a, float exponent) {
-    shared_ptr<ScalarNode> scalar = make_scalar_node(exponent, "exponent");
+shared_ptr<Node> pow(shared_ptr<Node> a, shared_ptr<Node> exp) {
     shared_ptr<Node> out_node =
-        make_node(&prim_pow, {a, scalar}, a->get_shape(), a->get_ndim());
+        make_node(&prim_pow, {a, exp}, a->get_shape(), a->get_ndim());
     return out_node;
 }
 
@@ -477,10 +507,9 @@ shared_ptr<Node> pow(shared_ptr<Node> a, float exponent) {
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override {
-        float exp = SCALAR(node->inputs[1])->value;
         int n = node->get_size();
         kernels::fused_bwd_pow<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), exp, node->inputs[2]->get_data(),
+            node->inputs[0]->get_data(), node->inputs[1]->get_data(), node->inputs[2]->get_data(),
             node->get_data(), n);
     }
     const string name() override { return "BwdPow"; }
@@ -488,12 +517,10 @@ static struct : Primitive {
 } prim_bwd_pow;
 
 shared_ptr<Node> bwd_pow(shared_ptr<Node> fwd, shared_ptr<Node> bwd) {
-    int exponent = SCALAR(fwd->inputs[1])->value;
     auto mantissa = copy_node_no_prim(fwd->inputs[0]);
-    shared_ptr<ScalarNode> scalar_exp =
-        make_scalar_node(exponent, "exponent.copy()");
+    auto exponent = copy_node_no_prim(fwd->inputs[1]);
     shared_ptr<Node> out_node =
-        make_node(&prim_bwd_pow, {mantissa, scalar_exp, bwd},
+        make_node(&prim_bwd_pow, {mantissa, exponent, bwd},
                   mantissa->get_shape(), mantissa->get_ndim());
     return out_node;
 }
@@ -959,7 +986,7 @@ shared_ptr<Node> linear(shared_ptr<Node> a, int out_dim) {
     int in_dim = a->get_shape()[a->get_ndim() - 1];
     int w_shape[2] = {in_dim, out_dim};
     int b_shape[2] = {1, out_dim};
-    auto W = xavier_normal(w_shape, 2);
+    auto W = kaiming_normal(w_shape, 2);
     auto b = full(b_shape, 2, 0.0f);
     W->requires_grad = true;
     b->requires_grad = true;
@@ -967,7 +994,7 @@ shared_ptr<Node> linear(shared_ptr<Node> a, int out_dim) {
 }
 
 // ============================================================
-//                        LINEAR
+//                        CROSS ENTROPY
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override {}
@@ -979,10 +1006,10 @@ static struct : Primitive {
 
 shared_ptr<Node> cross_entropy(shared_ptr<Node> logits, shared_ptr<Node> targets) {
     // stable log-softmax
-    auto maxes = max_ld(logits);           // [batch, 1]
+    auto maxes = max(logits, -1, true);           // [batch, 1]
     auto shifted = sub(logits, maxes);      // [batch, classes]
     auto exp_shifted = exp(shifted);        // [batch, classes]
-    auto sum_exp = sum_ld(exp_shifted);     // [batch, 1]  
+    auto sum_exp = sum(exp_shifted, -1, true);     // [batch, 1]  
     auto log_sum = log(sum_exp);            // [batch, 1]
     auto log_softmax = sub(shifted, log_sum); // [batch, classes]
     
@@ -990,7 +1017,7 @@ shared_ptr<Node> cross_entropy(shared_ptr<Node> logits, shared_ptr<Node> targets
     auto prod = mul(targets, log_softmax);  // [batch, classes]
     auto sum_all = sum_ld(prod);            // [batch, 1]
     auto neg_sum_all = neg(sum_all);
-    auto loss = mul(neg_sum_all, pow(full({logits->get_shape()[0]}, logits->get_shape()[0]), -1));
+    auto loss = div(neg_sum_all, full({logits->get_shape()[0]}, logits->get_shape()[0])); // [batch, 1] / batch
     return loss;
 }
 

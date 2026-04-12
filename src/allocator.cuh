@@ -15,7 +15,6 @@ struct Block
     size_t size = 0;
     Block* next_free = nullptr;
     Grid* mom = nullptr;
-
     OutStatus allocate_block(void);
     OutStatus free_block(void);
 };

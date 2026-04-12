@@ -6,7 +6,6 @@
 #include <stdexcept>
 #include "allocator.cuh"
 
-
 // <Block struct>
 OutStatus Block::allocate_block(void)
 {
@@ -240,6 +239,7 @@ float* ContentData::d_to_h()
 {
     check();
     float* dst = (float*)malloc(b_ptr->size);
+    cudaDeviceSynchronize();
     cudaMemcpy(dst, b_ptr->d_ptr, b_ptr->size, cudaMemcpyDeviceToHost);
     return dst;
 }

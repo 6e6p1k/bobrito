@@ -1,11 +1,10 @@
-#include <bits/stdc++.h>
-
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <algorithm>
 
 #include "allocator.cuh"
 #include "nodes.h"
@@ -103,7 +102,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
     // go through bwdnode-> outputs vector
     // and remove all the nullptrs
     bwd_node->outputs.erase(
-        std::remove_if(bwd_node->outputs.begin(), bwd_node->outputs.end(),
+        remove_if(bwd_node->outputs.begin(), bwd_node->outputs.end(),
                        [](const weak_ptr<Node>& w) { return w.expired(); }),
         bwd_node->outputs.end());
 }
@@ -179,8 +178,9 @@ void Graph::backward() {
 
 void Graph::eval() {
     fwd_pass();
-    bwd_pass();
+    if (need_backward()) bwd_pass();
     if (disposable) detach_grads_from_bwd_graph();
+    CUDA_CHECK();
 }
 
 // CHECKS
@@ -222,7 +222,7 @@ void Graph::locate_leaf_w_grad_nodes() {
 void Graph::pass(vector<Node*> order) {
     for (Node* node : order) {
         if (!node->is_meta()) continue;
-        int size = node->get_size();
+        // DEBUG(node, "PASS")
         node->prim->allocate(node);
         node->prim->eval(node);
     }
@@ -261,8 +261,9 @@ shared_ptr<Graph> make_model(shared_ptr<Node> root) {
     return g;
 }
 
-void eval(shared_ptr<Node> root) {
+void eval(shared_ptr<Node> root, bool export_graph) {
     Graph g = Graph(root, true);
     g.backward();
+    if (export_graph) root->export_graph();
     g.eval();
 }

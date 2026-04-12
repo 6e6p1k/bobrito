@@ -5,6 +5,7 @@
 
 #include "nodes.h"
 
+void CUDA_CHECK();
 
 // unary
 std::shared_ptr<Node> relu(std::shared_ptr<Node> a);
@@ -21,6 +22,8 @@ std::shared_ptr<Node> mul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
 std::shared_ptr<Node> div(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
 std::shared_ptr<Node> pow(std::shared_ptr<Node> a, float exponent);
 std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b); // kinda
+std::shared_ptr<Node> bwd_div(std::shared_ptr<Node> fwd, std::shared_ptr<Node> bwd);
+std::shared_ptr<Node> bwd_pow(std::shared_ptr<Node> fwd, std::shared_ptr<Node> bwd);
 
 // reductions
 std::shared_ptr<Node> sum_ld(std::shared_ptr<Node> a);
@@ -53,6 +56,12 @@ std::shared_ptr<Node> xavier_normal(int* shape, int ndim);
 std::shared_ptr<Node> xavier_normal(std::vector<int> shape);
 std::shared_ptr<Node> kaiming_normal(int* shape, int ndim);
 std::shared_ptr<Node> kaiming_normal(std::vector<int> shape);
+
+// layers 
+std::shared_ptr<Node> linear(std::shared_ptr<Node> a, int out_dim);
+
+// loss
+std::shared_ptr<Node> cross_entropy(std::shared_ptr<Node> logits, std::shared_ptr<Node> targets);
 
 
 
