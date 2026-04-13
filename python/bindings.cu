@@ -7,63 +7,163 @@
 #include "../src/nodes.h"
 #include "../src/ops.h"
 #include "../src/evaluate.h"
+#include "../src/utils.h"
 
 namespace py = pybind11;
 using namespace std;
 
-// Helper: Convert Node data to numpy array
-py::array_t<float> node_to_pyarray(shared_ptr<Node> node) {
-    if (!node->is_data_allocated()) {
-        eval(node);
-    }
-    
-    int ndim = node->get_ndim();
-    const int* shape_ptr = node->get_shape();
-    int size = node->get_size();
-    
-    float* h = node->d_data->d_to_h();
-    
-    std::vector<ssize_t> py_shape(shape_ptr, shape_ptr + ndim);
-    std::vector<ssize_t> py_strides(ndim);
-    ssize_t stride = sizeof(float);
-    for (int i = ndim - 1; i >= 0; i--) {
-        py_strides[i] = stride;
-        stride *= py_shape[i];
-    }
-    
-    auto capsule = py::capsule(h, [](void* p) { free(p); });
-    return py::array_t<float>(py_shape, py_strides, h, capsule);
+py::array_t<float> data_to_pyarray(void* h_data, int* shape, int* strides, int ndim) {
+    std::vector<ssize_t> py_shape(shape, shape + ndim);
+    std::vector<ssize_t> py_strides(strides, strides + ndim);
+    auto capsule = py::capsule(h_data, [](void* p) { std::free(p); });
+    return py::array_t<float>(py_shape, py_strides, static_cast<float*>(h_data), capsule);
 }
+
+py::array_t<float> data_to_pyarray(void* h_data, int* shape, int ndim) {
+    std::vector<ssize_t> py_shape(shape, shape + ndim);
+    int* strides = new int[ndim];
+    utils::compute_strides(strides, ndim, shape);
+    std::vector<ssize_t> py_strides(strides, strides + ndim);
+    auto capsule = py::capsule(h_data, [](void* p) { std::free(p); });
+    return py::array_t<float>(py_shape, py_strides, static_cast<float*>(h_data), capsule);
+}
+
+py::array_t<int> meta_to_pyarray(int* h_data, int size) {
+    data_to_pyarray<int> py_mate(h_data, h_data + &size);
+    return py_shape;
+}
+
 
 PYBIND11_MODULE(bobr, m) {
     m.doc() = "BOBR Framework - CUDA autograd library";
     
     // Node wrapper
     py::class_<Node, shared_ptr<Node>>(m, "Node")
-        .def("shape", [](const shared_ptr<Node>& n) {
-            vector<int> shape(n->get_shape(), n->get_shape() + n->get_ndim());
-            return shape;
+        .def(py::init([](py::object obj, bool requires_grad) 
+        {
+            // Extract shape and data from whatever we got
+            std::vector<int> shape;
+            float* data_ptr = nullptr;
+            int size = 1;
+            bool on_gpu = false;
+
+            // Check __cuda_array_interface__ first (PyTorch CUDA, CuPy)
+            if (py::hasattr(obj, "__cuda_array_interface__")) {
+                py::dict iface = obj.attr("__cuda_array_interface__").cast<py::dict>();
+                py::tuple shape_tuple = iface["shape"].cast<py::tuple>();
+                for (auto s : shape_tuple) shape.push_back(s.cast<int>());
+                py::tuple data_tuple = iface["data"].cast<py::tuple>();
+                data_ptr = reinterpret_cast<float*>(data_tuple[0].cast<uintptr_t>());
+                on_gpu = true;
+            }
+            // Then buffer protocol (numpy, array.array)
+            else if (py::isinstance<py::buffer>(obj)) {
+                py::buffer_info info = py::buffer(obj).request();
+                for (auto s : info.shape) shape.push_back(s);
+                data_ptr = static_cast<float*>(info.ptr);
+            }
+            else {
+                throw std::runtime_error("Expected numpy array, torch tensor, or cuda array");
+            }
+
+            shared_ptr<Node> node = make_shared<Node>();
+            node->requires_grad = requires_grad;
+            node->h_meta = make_shape_data(shape.size(), shape.data());
+            node->prim = nullptr;
+            node->d_data = make_shared<ContentData>();
+            node->d_data->allocate(node->get_size());
+
+            if (on_gpu) {
+                for (int s : shape) size *= s;
+                cudaMemcpy(node->d_data->data(), data_ptr,
+                        size * sizeof(float), cudaMemcpyDeviceToDevice);
+            } else {
+                for (int s : shape) size *= s;
+                node->d_data->h_to_d(data_ptr, size);
+            }
+
+            return node;
+        }), py::arg("data"), py::arg("requires_grad") = false)
+
+        .def_property_readonly("data", [](const shared_ptr<Node>& n) {
+            if (!n->is_data_allocated()) throw logic_error("Data not allocated!");
+            return data_to_pyarray<float>(n->get_data(), n->get_shape(), n->get_strides(), n->get_ndim());
         })
-        .def("ndim", &Node::get_ndim)
-        .def("size", &Node::get_size)
+
+        .def_property_readonly("grad", [](const shared_ptr<Node>& n) {
+            if (!n->requires_grad || n->inputs.size() != 0) throw logic_error("This is not a leaf node!");
+            if (!n->owned_grad || !n->owned_grad->is_data_allocated())
+                throw logic_error("Grad is not allocated!");
+            return data_to_pyarray<float>(n->owned_grad->get_data(), n->get_shape(), n->get_strides(), n->get_ndim());
+        })
+
+        .def_property_readonly("shape", [](const shared_ptr<Node>& n) {
+            return data_to_pyarray<int>(n->get_shape(), n->get_size());
+        })
+        .def_property_readonly("strides", [](const shared_ptr<Node>& n) {
+            return data_to_pyarray<int>(n->get_strides(), n->get_size());
+        })
+        .def_property_readonly("size", &Node::get_size)
+        .def_property_readonly("ndim", &Node::get_ndim)
+        .def_property_readonly("requires_grad", [](const shared_ptr<Node>& n) { return n->requires_grad; })
+
+        .def_property("label", [](const shared_ptr<Node>& n) { return n->label; },
+                             [](shared_ptr<Node>& n, const string& new_label) { n->set_label(new_label); })
+
+        // debug properties
+        .def_property_readonly("is_bwd", [](const shared_ptr<Node>& n) { return n->is_bwd; })
+        .def_property_readonly("is_label", &Node::is_label)
+        .def_property_readonly("is_meta", &Node::is_meta)
+        .def_property_readonly("is_data", &Node::is_data)
+        .def_property_readonly("is_data_allocated", &Node::is_data_allocated)
+
+
         .def("eval", [](shared_ptr<Node> n) { eval(n); })
-        .def("data", [](shared_ptr<Node> n) { return node_to_pyarray(n); })
-        .def("set_label", &Node::set_label)
-        .def("label", [](const shared_ptr<Node>& n) { return n->label; })
         .def("__repr__", [](const shared_ptr<Node>& n) {
-            return "Node(" + n->label + ", shape=" + to_string(n->get_ndim()) + "D)";
-        });
+            return make_node_string(n);
+        })
+
+        // Unary ops
+        .def("relu", [](const shared_ptr<Node>& n) { return relu(n); })
+        .def("exp", [](const shared_ptr<Node>& n) { return exp(n); })
+        .def("log", [](const shared_ptr<Node>& n) { return log(n); })
+        .def("__neg__", [](const shared_ptr<Node>& n) { return neg(n); })
+        .def("sqrt", [](const shared_ptr<Node>& n) { return sqrt(n); })
+
+        // Binary ops
+        .def("__add__", [](const shared_ptr<Node>& n, shared_ptr<Node> b) { return add(n, b); })
+        .def("__sub__", [](const shared_ptr<Node>& n, shared_ptr<Node> b) { return sub(n, b); })
+        .def("__mul__", [](const shared_ptr<Node>& n, shared_ptr<Node> b) { return mul(n, b); })
+        .def("__div__", [](const shared_ptr<Node>& n, shared_ptr<Node> b) { return div(n, b); })
+        .def("__matmul__", [](const shared_ptr<Node>& n, shared_ptr<Node> b) { return matmul(n, b); })
+
+        // Reduction ops
+        .def("sum", [](const shared_ptr<Node>& n, int dim, bool keepdims = false) { return sum(n, dim, keepdims); },
+            py::arg("dim"), py::arg("keepdims") = false)
+        .def("min", [](const shared_ptr<Node>& n, int dim, bool keepdims = false) { return min(n, dim, keepdims); },
+            py::arg("dim"), py::arg("keepdims") = false)
+        .def("max", [](const shared_ptr<Node>& n, int dim, bool keepdims = false) { return max(n, dim, keepdims); },
+            py::arg("dim"), py::arg("keepdims") = false)
+
+        // Shape ops
+        .def("reshape", [](const shared_ptr<Node>& n, vector<int> shape) { 
+            return reshape(n, shape.data(), shape.size()); })
+        .def("contiguous", &contiguous);
+
     
     // Graph wrapper
     py::class_<Graph, shared_ptr<Graph>>(m, "Graph")
         .def(py::init<shared_ptr<Node>, bool>(), py::arg("loss"), py::arg("disposable") = true)
-        .def("forward", [](shared_ptr<Graph>& g) { g->eval(); })
-        .def("backward", &Graph::backward)
-        .def("step", &Graph::sgd_step, py::arg("learning_rate"))
-        .def("zero_grad", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); });
+        .def("eval", [](shared_ptr<Graph>& g) { g->eval(); })
+        .def("build_backward", &Graph::backward)
+        .def("sgd_step", &Graph::sgd_step, py::arg("learning_rate"))
+        .def("detach_grads", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); });
     
+    
+
     // Creation ops
-    m.def("make_node", &make_leaf_node);
+
+
     m.def("full", [](vector<int> shape, float value) { return full(shape, value); });
     m.def("arange", [](int start, int end, int step = 1) { return arange(start, end, step); },
           py::arg("start"), py::arg("end"), py::arg("step") = 1);
@@ -74,6 +174,7 @@ PYBIND11_MODULE(bobr, m) {
     m.def("normal", [](vector<int> shape, float mean = 0.0f, float std = 1.0f) { return normal(shape, mean, std); },
           py::arg("shape"), py::arg("mean") = 0.0f, py::arg("std") = 1.0f);
     
+
     // Unary ops
     m.def("relu", [](shared_ptr<Node> a) { return relu(a); });
     m.def("exp", [](shared_ptr<Node> a) { return exp(a); });

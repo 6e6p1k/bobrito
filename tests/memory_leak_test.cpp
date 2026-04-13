@@ -9,6 +9,7 @@
 #include "../src/evaluate.h"
 #include "../src/nodes.h"
 #include "../src/ops.h"
+#include "../src/utils.h"
 
 #define TIME(label, iters, code) \
     do { \
@@ -56,33 +57,6 @@ void compare_data(std::shared_ptr<Node> a, std::shared_ptr<Node> b, float tol = 
 
     free(h_a);
     free(h_b);
-}
-
-// ============================================================
-//                        MEM STATS
-// ============================================================
-struct MemSnapshot {
-    size_t cuda_free;
-    size_t cuda_total;
-    string pool_stats;
-};
-
-static MemSnapshot snapshot() {
-    cudaDeviceSynchronize();
-    MemSnapshot s;
-    cudaMemGetInfo(&s.cuda_free, &s.cuda_total);
-    s.pool_stats = MemoryPool::call().stats();
-    return s;
-}
-
-static void print_snapshot(const string& label, const MemSnapshot& s) {
-    size_t used_mb  = (s.cuda_total - s.cuda_free) / (1024 * 1024);
-    size_t free_mb  = s.cuda_free  / (1024 * 1024);
-    size_t total_mb = s.cuda_total / (1024 * 1024);
-    cout << "[" << label << "]\n";
-    cout << "  CUDA: " << used_mb << " MB used / " << total_mb << " MB total"
-         << " (" << free_mb << " MB free)\n";
-    cout << "  Pool: " << s.pool_stats << "\n\n";
 }
 
 // ============================================================
@@ -144,8 +118,8 @@ vector<shared_ptr<Node>> train_2(int N_ITERS) {
     z.reset();
     act.reset();
     loss.reset();
+    g->detach_grads_from_bwd_graph();
     g.reset();
-
     // print_snapshot("AFTER LOOP", snapshot());
     return {W, b};
 }
@@ -174,33 +148,34 @@ int main() {
 int _main() {
     int N_ITERS = 15;
     // simple 1-layer: loss = sum_ld(relu(x @ W + b))
-    // auto x = full({64, 784}, 0.5f);
-    // auto W = full({784, 10}, 0.1f);
-    // auto b = full({1, 10}, 0.0f);
-    // x->set_label("x"); x->requires_grad = false;
-    // W->set_label("W"); W->requires_grad = true;
-    // b->set_label("b"); b->requires_grad = true;
+    auto x = full({64, 784}, 0.5f);
+    auto W = full({784, 10}, 0.1f);
+    auto b = full({1, 10}, 0.0f);
+    x->set_label("x"); x->requires_grad = false;
+    W->set_label("W"); W->requires_grad = true;
+    b->set_label("b"); b->requires_grad = true;
 
-    // print_snapshot("INIT", snapshot());
+    print_snapshot("INIT", snapshot());
 
-    // // first time to build 
-    // auto z    = add(matmul(x, W), b);
-    // auto act  = relu(z);
-    // auto loss = sum_ld(act);
-    // auto g = model(loss);
-    // g->backward();
+    // first time to build 
+    auto z    = add(matmul(x, W), b);
+    auto act  = relu(z);
+    auto loss = sum_ld(act);
+    auto g = make_model(loss);
+    g->backward();
 
-    // for (int i = 0; i < N_ITERS; i++) {
-    //     // g.zero_grads();
-    //     g->eval();
-    //     g->sgd_step(1e-3);
-    // }
-    // g->detach_grads_from_bwd_graph();
-    // z.reset();
-    // act.reset();
-    // loss.reset();
-    // g.reset();
-    // print_snapshot("AFTER LOOP", snapshot());
+    for (int i = 0; i < N_ITERS; i++) {
+        // g.zero_grads();
+        g->eval();
+        g->sgd_step(1e-3);
+        print_snapshot("iteration " + to_string(i), snapshot());
+    }
+    g->detach_grads_from_bwd_graph();
+    z.reset();
+    act.reset();
+    loss.reset();
+    g.reset();
+    print_snapshot("AFTER LOOP", snapshot());
 
 
     // simple 1-layer: loss = sum_ld(relu(x @ W + b))
@@ -223,6 +198,7 @@ int _main() {
     //     g.backward();
     //     g.eval();
     //     g.sgd_step(1e-3);
+    //     print_snapshot("iteration " + to_string(i), snapshot());
     // }
     // print_snapshot("AFTER LOOP", snapshot());
 

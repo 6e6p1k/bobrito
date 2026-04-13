@@ -190,10 +190,10 @@ void Graph::backward() {
 void Graph::eval() {
     fwd_pass();
     if (need_backward()) {
+        if (bwd_order.size() < 0) throw logic_error("Backward order is empty!"); 
         bwd_pass();
     }
     if (disposable) detach_grads_from_bwd_graph();
-    CUDA_CHECK();
 }
 
 // CHECKS

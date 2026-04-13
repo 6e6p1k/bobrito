@@ -1,5 +1,10 @@
 import bobr
 
-a = bobr.ones([2, 3, 4], False)
-print(bobr.memdata())
-print(a)
+a = bobr.arange(0, 10)
+b = bobr.full((10,), 0.5)
+
+c = a + b
+
+c.eval()
+
+print(c)

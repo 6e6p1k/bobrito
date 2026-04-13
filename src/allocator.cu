@@ -3,6 +3,10 @@
 #include <driver_types.h>
 #include <iostream>
 #include <stdexcept>
+#include <string>
+#include <sstream>
+
+#include "allocator.cuh"
 #include "allocator.cuh"
 
 // <Block struct>
@@ -204,6 +208,30 @@ Grid* MemoryPool::make_connect_grid(int tier)
 }
 constexpr size_t MemoryPool::TIER_SIZES[];
 constexpr int MemoryPool::BLOCKS_PER_TIER[];
+
+MemSnapshot snapshot() {
+    cudaDeviceSynchronize();
+    MemSnapshot s;
+    cudaMemGetInfo(&s.cuda_free, &s.cuda_total);
+    s.pool_stats = MemoryPool::call().stats();
+    return s;
+}
+
+std::string make_snapshot_string(const std::string& label, const MemSnapshot& s) {
+    size_t used_mb  = (s.cuda_total - s.cuda_free) / (1024 * 1024);
+    size_t free_mb  = s.cuda_free  / (1024 * 1024);
+    size_t total_mb = s.cuda_total / (1024 * 1024);
+    std::ostringstream oss;
+    oss << "[" << label << "]\n";
+    oss << "  CUDA: " << used_mb << " MB used / " << total_mb << " MB total"
+        << " (" << free_mb << " MB free)\n";
+    oss << "  Pool: " << s.pool_stats << "\n\n";
+    return oss.str();
+}
+
+void print_snapshot(const std::string& label, const MemSnapshot& s) {
+    std::cout << make_snapshot_string(label, s);
+}
 // </Memory pool class>
 
 

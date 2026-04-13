@@ -3,12 +3,12 @@
 #include <exception>
 #include "nodes.h"
 
+
+// ====================   UTILS    =====================
 namespace utils 
 {
-
 void compute_strides(int* dst, const int ndim, const int* shape);
 int numel(const int ndim, const int* shape);
-
 }
 
 

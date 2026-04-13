@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
+#include <string>
 
 struct Grid;
 
@@ -85,6 +87,17 @@ private:
     static constexpr int BLOCKS_PER_TIER[5] = {64, 256, 128, 64, 32};
 };
 
+// ===============    MEMORY UTILITIES   ==================
+struct MemSnapshot {
+    size_t cuda_free;
+    size_t cuda_total;
+    std::string pool_stats;
+};
+MemSnapshot snapshot();
+std::string make_snapshot_string(const std::string& label, const MemSnapshot& s);
+void print_snapshot(const std::string& label, const MemSnapshot& s);
+
+// ===============    CONTENT DATA   ==================
 struct ContentData
 {
     Block* b_ptr = nullptr;

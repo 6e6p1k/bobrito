@@ -137,7 +137,7 @@ void tensorToStringRecursive(std::ostringstream& oss, float* data, int* shape,
     oss << "]";
 }
 
-void print_node(std::shared_ptr<Node> node) {
+std::string make_node_string(std::shared_ptr<Node> node) {
     std::ostringstream oss;
     oss << "Node(";
 
@@ -158,16 +158,22 @@ void print_node(std::shared_ptr<Node> node) {
         oss << ", data:\n";
         tensorToStringRecursive(oss, h_data, node->get_shape(),
                                 node->get_ndim(), 0, 0);
+        free(h_data);
     }
 
     // grad
-    if (node->owned_grad && node->owned_grad->is_data() &&
-        node->owned_grad->is_data_allocated()) {
+    if (node->owned_grad && node->owned_grad->is_data_allocated()) {
         float* h_data = node->owned_grad->d_data->d_to_h();
         oss << ",\ngrad:\n";
         tensorToStringRecursive(oss, h_data, node->owned_grad->get_shape(),
                                 node->owned_grad->get_ndim(), 0, 0);
+        free(h_data);
     }
     oss << ")";
-    cout << oss.str() << endl;
+    return oss.str();
+}
+
+void print_node(std::shared_ptr<Node> node) {
+    std::string node_str = make_node_string(node);
+    std::cout << node_str << std::endl;
 }
