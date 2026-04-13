@@ -219,7 +219,7 @@ void Graph::compute_fwd_order() {
 
 void Graph::compute_bwd_order() {
     unordered_set<Node*> visited;
-    for (Node* leaf : require_grad_nodes) {
+    for (auto leaf : require_grad_nodes) {
         if (leaf->owned_grad) {
             build_topo_inputs_bwd(leaf->owned_grad.get(), visited, bwd_order);
         }
@@ -229,16 +229,18 @@ void Graph::compute_bwd_order() {
 void Graph::locate_leaf_w_grad_nodes() {
     if (require_grad_nodes.size() > 0)
         throw logic_error("require_grad_nodes is already filled.");
-    for (Node* node : fwd_order) {
+    for (auto node : fwd_order) {
         if (!node->is_meta()) continue;
-        if (node->requires_grad) require_grad_nodes.push_back(node);
+        if (node->requires_grad) {
+            DEBUG(node, "PUSHING TO REQUIRE_GRAD_NODES")
+            require_grad_nodes.push_back(node);
+        }
     }
 }
 
 void Graph::pass(vector<Node*> order) {
     for (Node* node : order) {
-        if (!node) continue;
-        if (!node->is_meta()) continue;
+        if (!node || !node->prim || !node->is_meta()) continue;
         node->prim->allocate(node);
         node->prim->eval(node);
     }

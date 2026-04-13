@@ -83,7 +83,6 @@ vector<shared_ptr<Node>> train_1(int N_ITERS) {
         g.eval();
         g.sgd_step(1e-3);
         // g.zero_grads();
-
     }
     // print_snapshot("AFTER LOOP", snapshot());
     return {W, b};

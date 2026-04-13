@@ -281,6 +281,16 @@ void ContentData::h_to_d(float* h_data, int size)
     cudaMemcpy(b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice);
 }
 
+void ContentData::d_to_d(float* d_data, int size)
+{
+    size_t bytes = size * sizeof(float);
+    if (!b_ptr)
+    {
+        MemoryPool::call().allocate(&b_ptr, bytes);
+    }
+    cudaMemcpy(b_ptr->d_ptr, d_data, bytes, cudaMemcpyDeviceToDevice);
+}
+
 void ContentData::check(void)
 {
     if (!b_ptr) throw std::logic_error("ContentData was never allocated.");

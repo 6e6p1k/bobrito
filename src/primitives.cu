@@ -1075,9 +1075,11 @@ shared_ptr<Node> cross_entropy(shared_ptr<Node> logits, shared_ptr<Node> targets
     log_softmax->set_label("sm_out");
     
     // cross entropy: -sum(targets * log_softmax) / batch
-    auto prod = mul(targets, log_softmax);  // [batch, classes]
-    auto sum_all = sum_ld(prod);            // [batch, 1]
+    auto prod = mul(targets, log_softmax);              // [batch, classes]
+    auto sum_classes = sum(prod, -1, false);     // [batch]
+    auto sum_all = sum_ld(sum_classes);
     auto neg_sum_all = neg(sum_all);
-    auto loss = div(neg_sum_all, full({logits->get_shape()[0]}, logits->get_shape()[0])); // [batch, 1] / batch
+    auto loss = div(neg_sum_all, full({1}, logits->get_shape()[0])); 
+
     return loss;
 }

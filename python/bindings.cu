@@ -1,4 +1,6 @@
+#include <future>
 #include <memory>
+#include <stdexcept>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
@@ -8,31 +10,79 @@
 #include "../src/ops.h"
 #include "../src/evaluate.h"
 #include "../src/utils.h"
+#include "pybind11/detail/common.h"
+#include "pybind11/pytypes.h"
 
 namespace py = pybind11;
 using namespace std;
 
-py::array_t<float> data_to_pyarray(void* h_data, int* shape, int* strides, int ndim) {
+py::array_t<float> data_to_pyarray(float* h_data, int* shape, int ndim) {
     std::vector<ssize_t> py_shape(shape, shape + ndim);
-    std::vector<ssize_t> py_strides(strides, strides + ndim);
+    std::vector<ssize_t> py_strides(ndim);
+    ssize_t stride = sizeof(float);
+    for (int i = ndim - 1; i >= 0; i--) {
+        py_strides[i] = stride;
+        stride *= shape[i];
+    }
     auto capsule = py::capsule(h_data, [](void* p) { std::free(p); });
-    return py::array_t<float>(py_shape, py_strides, static_cast<float*>(h_data), capsule);
-}
-
-py::array_t<float> data_to_pyarray(void* h_data, int* shape, int ndim) {
-    std::vector<ssize_t> py_shape(shape, shape + ndim);
-    int* strides = new int[ndim];
-    utils::compute_strides(strides, ndim, shape);
-    std::vector<ssize_t> py_strides(strides, strides + ndim);
-    auto capsule = py::capsule(h_data, [](void* p) { std::free(p); });
-    return py::array_t<float>(py_shape, py_strides, static_cast<float*>(h_data), capsule);
+    return py::array_t<float>(py_shape, py_strides, h_data, capsule);
 }
 
 py::array_t<int> meta_to_pyarray(int* h_data, int size) {
-    data_to_pyarray<int> py_mate(h_data, h_data + &size);
-    return py_shape;
+    py::array_t<int> py_meta(size, h_data);
+    return py_meta;
 }
 
+void steal_data(shared_ptr<Node>& thief, py::object victim) {
+    std::vector<int> shape;
+    float* data_ptr = nullptr;
+    bool on_gpu = false;
+
+    if (py::hasattr(victim, "__cuda_array_interface__")) {
+        py::dict iface = victim.attr("__cuda_array_interface__").cast<py::dict>();
+        py::tuple shape_tuple = iface["shape"].cast<py::tuple>();
+        for (auto s : shape_tuple) shape.push_back(s.cast<int>());
+        py::tuple data_tuple = iface["data"].cast<py::tuple>();
+        data_ptr = reinterpret_cast<float*>(data_tuple[0].cast<uintptr_t>());
+        on_gpu = true;
+    }
+    // Then buffer protocol (numpy, array.array)
+    else if (py::isinstance<py::buffer>(victim)) {
+        py::buffer_info info = py::buffer(victim).request();
+        for (auto s : info.shape) shape.push_back(s);
+        data_ptr = static_cast<float*>(info.ptr);
+    }
+    else {
+        throw std::runtime_error("Expected numpy array, torch tensor, or cuda array");
+    }
+
+    // check shape
+    int size = utils::numel(shape.size(), shape.data());
+    bool ndim_match = shape.size() == thief->get_ndim();
+    bool size_match = size == thief->get_size();
+    if (!ndim_match || !size_match) 
+        throw logic_error("Metadata doesn't match.");
+
+    // check thief's ContentData
+    if (!thief->is_data()) {
+        thief->d_data = make_shared<ContentData>();
+        thief->d_data->allocate(size);
+    } else if (!thief->is_data_allocated()) {
+        thief->d_data->allocate(size);
+    } 
+
+    if (on_gpu) {
+        thief->d_data->d_to_d(data_ptr, size);
+    } else {
+        thief->d_data->h_to_d(data_ptr, size);
+    }
+}
+
+void steal_data(shared_ptr<Node>& thief, shared_ptr<Node> victim) {
+    thief->d_data = victim->d_data;
+    // thief's d_data will be freed automatically
+    // as its ref_count is dropped to 0
+}
 
 PYBIND11_MODULE(bobr, m) {
     m.doc() = "BOBR Framework - CUDA autograd library";
@@ -87,21 +137,21 @@ PYBIND11_MODULE(bobr, m) {
 
         .def_property_readonly("data", [](const shared_ptr<Node>& n) {
             if (!n->is_data_allocated()) throw logic_error("Data not allocated!");
-            return data_to_pyarray<float>(n->get_data(), n->get_shape(), n->get_strides(), n->get_ndim());
+            return data_to_pyarray(n->d_data->d_to_h(), n->get_shape(), n->get_ndim());
         })
 
         .def_property_readonly("grad", [](const shared_ptr<Node>& n) {
-            if (!n->requires_grad || n->inputs.size() != 0) throw logic_error("This is not a leaf node!");
+            if (!n->requires_grad) throw logic_error("This is not a leaf node!");
             if (!n->owned_grad || !n->owned_grad->is_data_allocated())
                 throw logic_error("Grad is not allocated!");
-            return data_to_pyarray<float>(n->owned_grad->get_data(), n->get_shape(), n->get_strides(), n->get_ndim());
+            return data_to_pyarray(n->owned_grad->d_data->d_to_h(), n->get_shape(), n->get_ndim());
         })
 
         .def_property_readonly("shape", [](const shared_ptr<Node>& n) {
-            return data_to_pyarray<int>(n->get_shape(), n->get_size());
+            return meta_to_pyarray(n->get_shape(), n->get_ndim());
         })
         .def_property_readonly("strides", [](const shared_ptr<Node>& n) {
-            return data_to_pyarray<int>(n->get_strides(), n->get_size());
+            return meta_to_pyarray(n->get_strides(), n->get_ndim());
         })
         .def_property_readonly("size", &Node::get_size)
         .def_property_readonly("ndim", &Node::get_ndim)
@@ -118,7 +168,9 @@ PYBIND11_MODULE(bobr, m) {
         .def_property_readonly("is_data_allocated", &Node::is_data_allocated)
 
 
-        .def("eval", [](shared_ptr<Node> n) { eval(n); })
+        .def("eval", [](shared_ptr<Node>& n) { eval(n); })
+        .def("steal_data", py::overload_cast<shared_ptr<Node>&, shared_ptr<Node>>(&steal_data))
+        .def("steal_data", py::overload_cast<shared_ptr<Node>&, py::object>(&steal_data))
         .def("__repr__", [](const shared_ptr<Node>& n) {
             return make_node_string(n);
         })
@@ -154,6 +206,13 @@ PYBIND11_MODULE(bobr, m) {
     // Graph wrapper
     py::class_<Graph, shared_ptr<Graph>>(m, "Graph")
         .def(py::init<shared_ptr<Node>, bool>(), py::arg("loss"), py::arg("disposable") = true)
+        .def_property_readonly("weights", [](shared_ptr<Graph>& g) { 
+            py::list py_lst(g->require_grad_nodes.size());
+            for (auto node : g->require_grad_nodes) {
+                py_lst.append(make_node_string(node));
+            }
+            return py_lst;
+        })
         .def("eval", [](shared_ptr<Graph>& g) { g->eval(); })
         .def("build_backward", &Graph::backward)
         .def("sgd_step", &Graph::sgd_step, py::arg("learning_rate"))
@@ -216,5 +275,12 @@ PYBIND11_MODULE(bobr, m) {
     m.def("eval", [](shared_ptr<Node> node, bool export_graph = false) { eval(node, export_graph); },
           py::arg("node"), py::arg("export_graph") = false);
     m.def("make_model", &make_model);
+
+    m.def("sync", []() { CUDA_CHECK(); });
+    m.def("mempool_stats", []() { cout << MemoryPool::call().stats() << endl; });
+    m.def("mem_snapshot", [](){
+        auto s = snapshot();
+        print_snapshot("VRAM SUMMARY", s);
+    });
 }
 

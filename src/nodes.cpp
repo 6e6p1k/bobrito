@@ -173,6 +173,43 @@ std::string make_node_string(std::shared_ptr<Node> node) {
     return oss.str();
 }
 
+std::string make_node_string(Node* node) {
+    std::ostringstream oss;
+    oss << "Node(";
+
+    // label
+    if (node->is_label()) oss << "label='" + node->label + "', ";
+
+    // shape
+    oss << "shape=[";
+    for (int i = 0; i < node->get_ndim(); ++i) {
+        oss << node->get_shape()[i];
+        if (i != node->get_ndim() - 1) oss << ", ";
+    }
+    oss << "]";
+
+    // data
+    if (node->is_data_allocated()) {
+        float* h_data = node->d_data->d_to_h();
+        oss << ", data:\n";
+        tensorToStringRecursive(oss, h_data, node->get_shape(),
+                                node->get_ndim(), 0, 0);
+        free(h_data);
+    }
+
+    // grad
+    if (node->owned_grad && node->owned_grad->is_data_allocated()) {
+        float* h_data = node->owned_grad->d_data->d_to_h();
+        oss << ",\ngrad:\n";
+        tensorToStringRecursive(oss, h_data, node->owned_grad->get_shape(),
+                                node->owned_grad->get_ndim(), 0, 0);
+        free(h_data);
+    }
+    oss << ")";
+    return oss.str();
+}
+
+
 void print_node(std::shared_ptr<Node> node) {
     std::string node_str = make_node_string(node);
     std::cout << node_str << std::endl;

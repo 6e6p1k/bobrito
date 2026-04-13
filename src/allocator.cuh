@@ -109,6 +109,7 @@ struct ContentData
     void allocate(int size);
     float* d_to_h();
     void h_to_d(float* h_data, int size);
+    void d_to_d(float* d_data, int size);
     bool is_allocated(void);
 
     ~ContentData()

@@ -52,7 +52,9 @@ static const char* op_color(const string& name) {
 }
 
 static bool is_leaf(Node* node) {
-    return node->inputs.empty();
+    for (auto inp : node->inputs)
+        if (inp->h_meta) return false;
+    return true;
 }
 
 static void dot_emit_node_label(ofstream& out, Node* node) {
