@@ -91,6 +91,7 @@ struct Node {
     std::shared_ptr<Node> grad_buffer;
     std::shared_ptr<Node> owned_grad;
     std::weak_ptr<Node> grad_node;
+    std::weak_ptr<Node> source;
     bool requires_grad = false;
     bool is_bwd = false;
 
@@ -117,9 +118,9 @@ struct ScalarNode : Node {
 std::shared_ptr<Node> make_node(Primitive* prim,
                                 std::vector<std::shared_ptr<Node>> inputs,
                                 int* shape, int ndim);
-std::shared_ptr<Node> copy_node_no_prim(std::shared_ptr<Node> node);
-std::shared_ptr<ScalarNode> make_scalar_node(float value,
-                                             std::string label = "");
+std::shared_ptr<Node> copy_node_no_prim_before_eval(std::shared_ptr<Node> node);
+std::shared_ptr<ScalarNode> make_scalar_node(float value, std::string label = "");
+std::shared_ptr<Node> copy_node_no_prim_with_link(std::shared_ptr<Node> node);
 void print_node(std::shared_ptr<Node> node);
 
 struct Primitive {

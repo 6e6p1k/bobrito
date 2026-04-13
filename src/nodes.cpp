@@ -79,7 +79,7 @@ std::shared_ptr<Node> make_node(Primitive* prim,
     return node;
 }
 
-std::shared_ptr<Node> copy_node_no_prim(shared_ptr<Node> node) {
+std::shared_ptr<Node> copy_node_no_prim_before_eval(shared_ptr<Node> node) {
     shared_ptr<Node> out_node = make_shared<Node>();
     out_node->h_meta = node->h_meta;
     out_node->d_data = node->d_data;
@@ -89,7 +89,7 @@ std::shared_ptr<Node> copy_node_no_prim(shared_ptr<Node> node) {
 }
 
 std::shared_ptr<Node> copy_node_no_prim_with_link(shared_ptr<Node> node) {
-    auto out_node = copy_node_no_prim(node);
+    auto out_node = copy_node_no_prim_before_eval(node);
     out_node->inputs = node->inputs;
     out_node->outputs = node->outputs;
     return out_node;

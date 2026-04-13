@@ -1,4 +1,3 @@
-#include <cmath>
 #include <cstddef>
 #include <cuda_runtime_api.h>
 #include <driver_types.h>

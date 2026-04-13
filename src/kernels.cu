@@ -67,6 +67,8 @@ __global__ void pow(float* in, float* exponent, float* out, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) out[i] = powf(in[i], exponent[i] );
 }
+// HAVE TO THINK ABOUT POW
+// SHOULD ADD ONE FOR CONSTANT
 
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -81,5 +83,31 @@ __global__ void scale(float* data, float limit, int n) {
 __global__ void bwd_div(float* src, float* dst, float* prev_grad, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) dst[i] = prev_grad[i] * 1.0f / src[i];
+}
+
+__global__ void max_min_bwd_last_dim(
+    const float* fwd_data,  // Shape [N, D]
+    const float* target,    // Shape [N] (The max/min values)
+    const float* prev_grad, // Shape [N] (The incoming gradients)
+    float* new_grad,        // Shape [N, D]
+    int N,                  // Number of rows (leading dims)
+    int D                   // Size of the last dimension
+) {
+    // Standard global index
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    // Total elements is N * D
+    if (i < N * D) {
+        // Determine which row (leading dim index) this thread belongs to
+        int row_idx = i / D; 
+        
+        // Compare current element to the target of its specific row
+        // If it matches, it gets the gradient; otherwise, 0.
+        if (fwd_data[i] == target[row_idx]) {
+            new_grad[i] = prev_grad[row_idx];
+        } else {
+            new_grad[i] = 0.0f;
+        }
+    }
 }
 }

@@ -101,10 +101,12 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
 
     // go through bwdnode-> outputs vector
     // and remove all the nullptrs
-    bwd_node->outputs.erase(
-        remove_if(bwd_node->outputs.begin(), bwd_node->outputs.end(),
-                       [](const weak_ptr<Node>& w) { return w.expired(); }),
-        bwd_node->outputs.end());
+    auto& v = bwd_node->outputs;
+    for (int i = v.size() - 1; i >= 0; --i) {
+        if (v[i].expired()) {
+            v.erase(v.begin() + i); // Actually deletes it right now
+        }
+    }
 }
 
 // ============================================================
@@ -131,7 +133,16 @@ void build_topo_outputs(Node* node, unordered_set<Node*>& visited,
         build_topo_outputs(out.lock().get(), visited, order);
 }
 
-vector<Node*> evaluate_fwd_find_leaf_grads(vector<Node*>);
+void build_topo_inputs_bwd(Node* node, unordered_set<Node*>& visited,
+                           vector<Node*>& order) {
+    if (visited.count(node)) return;
+    visited.insert(node);
+    for (auto& inp : node->inputs) {
+        if (inp->is_bwd)
+            build_topo_inputs_bwd(inp.get(), visited, order);
+    }
+    order.push_back(node);
+}
 
 void eval_helper(vector<Node*>& fwd_order, vector<Node*>& bwd_order) {
     vector<Node*> require_grad;
@@ -178,7 +189,9 @@ void Graph::backward() {
 
 void Graph::eval() {
     fwd_pass();
-    if (need_backward()) bwd_pass();
+    if (need_backward()) {
+        bwd_pass();
+    }
     if (disposable) detach_grads_from_bwd_graph();
     CUDA_CHECK();
 }
@@ -205,9 +218,12 @@ void Graph::compute_fwd_order() {
 }
 
 void Graph::compute_bwd_order() {
-    if (!is_root()) throw logic_error("Root node is nullptr!");
     unordered_set<Node*> visited;
-    build_topo_outputs(root.get(), visited, bwd_order);
+    for (Node* leaf : require_grad_nodes) {
+        if (leaf->owned_grad) {
+            build_topo_inputs_bwd(leaf->owned_grad.get(), visited, bwd_order);
+        }
+    }
 }
 
 void Graph::locate_leaf_w_grad_nodes() {
@@ -221,8 +237,8 @@ void Graph::locate_leaf_w_grad_nodes() {
 
 void Graph::pass(vector<Node*> order) {
     for (Node* node : order) {
+        if (!node) continue;
         if (!node->is_meta()) continue;
-        // DEBUG(node, "PASS")
         node->prim->allocate(node);
         node->prim->eval(node);
     }
@@ -251,7 +267,7 @@ void Graph::_backward() {
 
 void Graph::detach_grads_from_bwd_graph() {
     for (auto grad_leaf : require_grad_nodes)
-        grad_leaf->owned_grad = copy_node_no_prim(grad_leaf->owned_grad);
+        grad_leaf->owned_grad = copy_node_no_prim_before_eval(grad_leaf->owned_grad);
 }
 // ============================================================
 //                       PUBLIC API

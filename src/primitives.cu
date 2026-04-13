@@ -29,6 +29,29 @@ void CUDA_CHECK() {
     }
 }
 
+
+// ============================================================
+//                         COPY HELPER
+// ============================================================
+static struct : Primitive {
+    void eval(Node* node) override {} // no-op, data aliased in allocate
+    void allocate(Node* node) override {
+        node->d_data = node->inputs[0]->d_data;
+    }
+    const string name() override { return "Identity"; }
+    const string symbol() override { return "id"; }
+} prim_identity;
+
+shared_ptr<Node> copy_node_no_prim(shared_ptr<Node> node) {
+    auto out = make_shared<Node>();
+    out->prim = &prim_identity;
+    out->h_meta = node->h_meta;
+    out->is_bwd = true;
+    out->inputs.push_back(node);
+    out->set_label(node->label + ".copy()");
+    return out;
+}
+
 // ============================================================
 //                         LEAF INITIATION
 // ============================================================
@@ -367,6 +390,7 @@ template <typename KernelOp>
 static void elemwise_eval(Node* node) {
     BroadcastInfo info = broadcast::elemwise(node);
     int n = node->get_size();
+
     kernels::elemwise<KernelOp><<<GRID_SIZE(n), BLOCK_SIZE>>>(
         node->inputs[0]->get_data(), node->inputs[1]->get_data(),
         node->get_data(), info);
@@ -443,7 +467,9 @@ shared_ptr<Node> mul(shared_ptr<Node> a, shared_ptr<Node> b) {
 //                          DIV
 // ============================================================
 static struct : Primitive {
-    void eval(Node* node) override { elemwise_eval<cuDiv>(node); }
+    void eval(Node* node) override { 
+        elemwise_eval<cuDiv>(node); 
+    }
     const string name() override { return "Div"; }
     const string symbol() override { return "/"; }
     void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
@@ -467,7 +493,7 @@ static struct : Primitive {
     void eval(Node* node) override { 
         int n = node->get_size();
         kernels::bwd_div<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), node->get_data(), node->inputs[2]->get_data(), n);
+            node->inputs[0]->get_data(), node->get_data(), node->inputs[1]->get_data(), n);
     }
     const string name() override { return "BwdDiv"; }
     const string symbol() override { return "bwd_div"; }
@@ -710,6 +736,32 @@ shared_ptr<Node> reduction_ld_helper(Primitive* prim,
 }
 
 // ============================================================
+//                       Max & Min Bwd
+// ============================================================
+static struct : Primitive {
+    void eval(Node* node) override { 
+        auto fwd_node = node->inputs[0];
+        auto grad = node->inputs[1];
+        int rows = fwd_node->get_size();
+        int last_dim = fwd_node->inputs[0]->get_size() / rows;
+        kernels::max_min_bwd_last_dim<<<GRID_SIZE(rows * last_dim), BLOCK_SIZE>>>(
+        fwd_node->inputs[0]->get_data(),  // original input [N, D]
+        fwd_node->get_data(),              // max values [N]
+        grad->get_data(),                  // upstream gradient [N]
+        node->get_data(),                  // output gradient [N, D]
+        rows, last_dim);
+    }
+    const string name() override { return "MaxMinBwd"; }
+    const string symbol() override { return "max_min_bwd()"; }
+} prim_max_min_bwd;
+
+shared_ptr<Node> max_min_bwd(shared_ptr<Node> fwd_node, shared_ptr<Node>  grad) {
+    auto out_node = make_node(&prim_max_min_bwd, {fwd_node, grad},
+                              fwd_node->inputs[0]->get_shape(), fwd_node->inputs[0]->get_ndim());
+    return out_node;
+}
+
+// ============================================================
 //                          SUMLD
 // ============================================================
 static struct : Primitive {
@@ -731,8 +783,10 @@ shared_ptr<Node> sum_ld(shared_ptr<Node> a) {
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override { reduction_ld_eval<cubMin>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
+    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
+             shared_ptr<Node> out[]) override {                 
+                out[0] = max_min_bwd(fwd, grad);
+            }
     const string name() override { return "MinLD"; }
     const string symbol() override { return "min(dim=-1)"; }
 } prim_min_ld;
@@ -746,8 +800,11 @@ shared_ptr<Node> min_ld(shared_ptr<Node> a) {
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override { reduction_ld_eval<cubMax>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
+    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
+             shared_ptr<Node> out[]) override {
+                out[0] = max_min_bwd(fwd, grad);
+
+             }
     const string name() override { return "MaxLD"; }
     const string symbol() override { return "max(dim=-1)"; }
 } prim_max_ld;
@@ -845,7 +902,7 @@ shared_ptr<Node> sum(shared_ptr<Node> a, int dim, bool keepdims) {
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override { reduction_ld_eval<cubSum>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
+    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
              shared_ptr<Node> out[]) override {}
     const string name() override { return "Min"; }
     const string symbol() override { return "min()"; }
@@ -860,8 +917,9 @@ shared_ptr<Node> min(shared_ptr<Node> a, int dim, bool keepdims) {
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override { reduction_ld_eval<cubSum>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
+    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
+             shared_ptr<Node> out[]) override { 
+            }
     const string name() override { return "Max"; }
     const string symbol() override { return "max()"; }
 } prim_max;
@@ -990,6 +1048,8 @@ shared_ptr<Node> linear(shared_ptr<Node> a, int out_dim) {
     auto b = full(b_shape, 2, 0.0f);
     W->requires_grad = true;
     b->requires_grad = true;
+    W->set_label("W");
+    b->set_label("b");
     return add(matmul(a, W), b);
 }
 
@@ -1012,6 +1072,7 @@ shared_ptr<Node> cross_entropy(shared_ptr<Node> logits, shared_ptr<Node> targets
     auto sum_exp = sum(exp_shifted, -1, true);     // [batch, 1]  
     auto log_sum = log(sum_exp);            // [batch, 1]
     auto log_softmax = sub(shifted, log_sum); // [batch, classes]
+    log_softmax->set_label("sm_out");
     
     // cross entropy: -sum(targets * log_softmax) / batch
     auto prod = mul(targets, log_softmax);  // [batch, classes]
@@ -1020,7 +1081,3 @@ shared_ptr<Node> cross_entropy(shared_ptr<Node> logits, shared_ptr<Node> targets
     auto loss = div(neg_sum_all, full({logits->get_shape()[0]}, logits->get_shape()[0])); // [batch, 1] / batch
     return loss;
 }
-
-
-
-

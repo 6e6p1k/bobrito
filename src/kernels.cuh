@@ -56,4 +56,12 @@ __global__ void pow(float* in, float* exponent, float* out, int n);
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n);
 __global__ void scale(float* data, float limit, int n);
 __global__ void bwd_div(float* src, float* dst, float* prev_grad, int n);
+__global__ void max_min_bwd_last_dim(
+    const float* fwd_data,  // Shape [N, D]
+    const float* target,    // Shape [N] (The max/min values)
+    const float* prev_grad, // Shape [N] (The incoming gradients)
+    float* new_grad,        // Shape [N, D]
+    int N,                  // Number of rows (leading dims)
+    int D                   // Size of the last dimension
+);
 }
