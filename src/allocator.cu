@@ -132,9 +132,13 @@ std::string MemoryPool::stats() {
 
 void MemoryPool::free(Block* b_ptr)
 {
+    cudaMemset(b_ptr->d_ptr, 0, b_ptr->size);
     b_ptr->mom->free_block(b_ptr);
 
     // for stats & debugging purposes
+    std::cout << "\nALLOCATOR. BLOCK FREED ===============\n";
+    std::cout << print_block(b_ptr);
+    std::cout << "========================================\n\n";
     allocated_blocks.erase(std::remove(allocated_blocks.begin(), allocated_blocks.end(), b_ptr), allocated_blocks.end());
     total_allocations--;
     total_bytes_in_use -= b_ptr->size;
@@ -165,6 +169,9 @@ void MemoryPool::allocate(Block** dst, size_t bytes) {
             total_allocations++;
             total_bytes_in_use += TIER_SIZES[tier];
             allocated_blocks.push_back(*dst);
+            // std::cout << "\nALLOCATOR. BLOCK ALLOCATION =============\n";
+            // std::cout << print_block(*dst);
+            // std::cout << "========================================\n\n";
             return;
         }
         grid = grid->next_free_grid;
@@ -225,15 +232,15 @@ MemSnapshot snapshot() {
 std::string print_block(const Block* block) {
     std::ostringstream oss;
     oss << "\tBlock ptr: " << block << "\n"
-        << "\tData size: " << block->size << " bytes" << "\n"
-        << "\tData size: " << block->size / sizeof(float) << " floats" << "\n"
+        << "\tBlock size: " << block->size << " bytes"
+        << " (" << block->size / sizeof(float) << " floats" << ")" << "\n"
         << "\tData ptr: " << block->d_ptr << "\n"
         << "\tData (first 12 floats): ";
-        int display_size = std::min(block->size, 12 * sizeof(float));
+        int display_size = std::min((int)(block->size / sizeof(float)), 12);
         float tmp[display_size];
         cudaMemcpy(tmp, block->d_ptr, std::min(block->size, display_size * sizeof(float)), cudaMemcpyDeviceToHost);
         oss << "[";
-        for (int i = 0; i < display_size && i * sizeof(float) < block->size; i++) {
+        for (int i = 0; i < display_size; i++) {
             oss << std::fixed << std::setprecision(6) << tmp[i] << " ";
         }
         oss << "]\n"
@@ -280,10 +287,11 @@ void print_allocated_blocks() {
 // <ContentData>
 void ContentData::allocate(int size)
 {
-    if (!b_ptr)
-    {
+    if (!b_ptr) {    
         MemoryPool::call().allocate(&b_ptr, size * sizeof(float));
         _size = size;
+    } else {
+        throw std::logic_error("Block is already allocated!");
     }
 }
 
@@ -307,9 +315,9 @@ size_t ContentData::bytes()
 float* ContentData::d_to_h()
 {
     check();
-    float* dst = (float*)malloc(b_ptr->size);
+    float* dst = (float*)malloc(_size * sizeof(float));
     cudaDeviceSynchronize();
-    cudaMemcpy(dst, b_ptr->d_ptr, b_ptr->size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(dst, b_ptr->d_ptr, _size * sizeof(float), cudaMemcpyDeviceToHost);
     return dst;
 }
 
@@ -342,7 +350,7 @@ void ContentData::check(void)
 
 bool ContentData::is_allocated(void)
 {
-    if (b_ptr == nullptr || b_ptr->d_ptr == nullptr) return false;
+    if (b_ptr == nullptr) return false;
     return true;
 }
 // </ContentData>

@@ -78,14 +78,18 @@ std::shared_ptr<Node> make_node(Primitive* prim,
     node->is_bwd = is_bwd;
     if (is_bwd) {
         for (auto input : inputs)
-            input->outputs.push_back(node);
+            if (input->prim->name() != "Identity")
+                input->outputs.push_back(node);
     }
     return node;
 }
 
 std::shared_ptr<Node> copy_node_no_prim_before_eval(shared_ptr<Node> node) {
     shared_ptr<Node> out_node = make_shared<Node>();
-    out_node->h_meta = node->h_meta;
+    auto shape = new int[node->get_ndim()];
+    for (int i = 0; i < node->get_ndim(); ++i)
+        shape[i] = node->get_shape()[i];
+    out_node->h_meta = make_shape_data(node->get_ndim(), shape);
     out_node->d_data = node->d_data;
     out_node->is_bwd = node->is_bwd;
     out_node->set_label(node->label + ".copy()");

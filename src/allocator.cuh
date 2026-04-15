@@ -118,7 +118,10 @@ struct ContentData
 
     ~ContentData()
     {
-        if (b_ptr) MemoryPool::call().free(b_ptr);
+        if (b_ptr != nullptr) {
+            MemoryPool::call().free(b_ptr);
+            b_ptr = nullptr;
+        }
     }
 
     private:

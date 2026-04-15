@@ -35,7 +35,7 @@ static string shape_str(Node* node) {
     return ss.str();
 }
 
-static string ptr_str(void* ptr) {
+string ptr_str(void* ptr) {
     ostringstream ss;
     ss << ptr;
     return ss.str();

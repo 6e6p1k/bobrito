@@ -12,6 +12,7 @@
 #include "kernels.cuh"
 #include "nodes.h"
 #include "ops.h"
+#include "shape_data.h"
 #include "utils.h"
 
 #define GRID_SIZE(n) ((n + 255) / 256)
@@ -55,7 +56,10 @@ static struct : Primitive {
 shared_ptr<Node> copy_node_no_prim(shared_ptr<Node> node) {
     auto out = make_shared<Node>();
     out->prim = &prim_identity;
-    out->h_meta = node->h_meta;
+    auto shape = new int[node->get_ndim()];
+    for (int i = 0; i < node->get_ndim(); ++i)
+        shape[i] = node->get_shape()[i];
+    out->h_meta = make_shape_data(node->get_ndim(), shape);
     out->is_bwd = true;
     out->inputs.push_back(node);
     out->set_label(node->label + ".copy()");
