@@ -69,7 +69,7 @@ static void dot_emit_node_label(ofstream& out, Node* node) {
     string id = "n" + to_string((uintptr_t)node);
     string shape_s = shape_str(node);
 
-    bool scalar = shape_s == "[]";
+    bool scalar = (shape_s == "[]" && node->prim == nullptr);
 
     string name = scalar ? "Scalar" : node->prim->name();
     const char* color = op_color(name);

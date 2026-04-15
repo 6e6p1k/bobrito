@@ -314,7 +314,7 @@ int main() {
     // if (err != cudaSuccess) {
     //     cerr << "Error occurred during mul_grad test: " << cudaGetErrorString(err) << "\n";
     // } else cout << "CUDA synchronized successfully.\n";
-    RUN(test_div_grad);
+    RUN(test_mul_grad);
 
     CUDA_CHECK();
     err = cudaDeviceSynchronize();
@@ -322,7 +322,7 @@ int main() {
         cerr << "Error occurred during mul_grad test: " << cudaGetErrorString(err) << "\n";
     } else cout << "CUDA synchronized successfully.\n";
 
-    RUN(test_mul_grad);
+    RUN(test_div_grad);
 
     cout<<"\n----------------------------------------------\n\n";
 

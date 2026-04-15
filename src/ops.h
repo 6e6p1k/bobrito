@@ -30,7 +30,7 @@ std::shared_ptr<Node> sum_ld(std::shared_ptr<Node> a);
 std::shared_ptr<Node> min_ld(std::shared_ptr<Node> a);
 std::shared_ptr<Node> max_ld(std::shared_ptr<Node> a);
 std::shared_ptr<Node> expand_ld(std::shared_ptr<Node> a, int* out_shape, int out_ndim); // not really a reduction
-std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim, bool keepdims);
+std::shared_ptr<Node> sum(std::shared_ptr<Node> a, int dim = 52, bool keepdims = false); // dim=52 is a hack for "sum all dims"
 std::shared_ptr<Node> min(std::shared_ptr<Node> a, int dim, bool keepdims);
 std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims);
 

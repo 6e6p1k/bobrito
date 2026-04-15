@@ -20,10 +20,11 @@ namespace kernels
 {
 
 template <typename Op>
-__global__ void elemwise(float* a, float* b, float* out, BroadcastInfo info) 
+__global__ void elemwise(float* a, float* b, float* out, int n, BroadcastInfo info)
 {
     int out_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    
+    if (out_idx >= n) return;
+
     // decompose flat index into nd, then recompose for each input
     int a_idx = 0, b_idx = 0;
     int remaining = out_idx;
@@ -33,7 +34,7 @@ __global__ void elemwise(float* a, float* b, float* out, BroadcastInfo info)
         a_idx += coord * info.a_strides[i];
         b_idx += coord * info.b_strides[i];
     }
-    
+
     out[out_idx] = Op::apply(a[a_idx], b[b_idx]);
 }
 
@@ -55,7 +56,7 @@ __global__ void fused_bwd_pow(float* mantissa, float* exponent, float* prev_grad
 __global__ void pow(float* in, float* exponent, float* out, int n);
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n);
 __global__ void scale(float* data, float limit, int n);
-__global__ void bwd_div(float* A, float* B, float* prev_grad, float* dst, BroadcastInfo info);
+__global__ void bwd_div(float* A, float* B, float* prev_grad, float* dst, int n, BroadcastInfo info);
 __global__ void max_min_bwd_last_dim(
     const float* fwd_data,  // Shape [N, D]
     const float* target,    // Shape [N] (The max/min values)

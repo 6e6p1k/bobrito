@@ -1,11 +1,10 @@
-#include "cub/device/dispatch/dispatch_streaming_reduce.cuh"
 #include "utils.h"
 #include "kernels.cuh"
 
 
 namespace kernels
 {
-__global__ void elemwise(float* a, float* b, float* out, BroadcastInfo info);
+__global__ void elemwise(float* a, float* b, float* out, int n, BroadcastInfo info);
 
 __global__ void fill(float* dst, float val, int n) 
 {
@@ -80,8 +79,9 @@ __global__ void scale(float* data, float limit, int n) {
     if (i < n) data[i] = data[i] * 2.0f * limit - limit;
 }
 
-__global__ void bwd_div(float* A, float* B, float* prev_grad, float* dst, BroadcastInfo info) {
+__global__ void bwd_div(float* A, float* B, float* prev_grad, float* dst, int n, BroadcastInfo info) {
     int out_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (out_idx >= n) return;
     // decompose flat index into nd, then recompose for each input
     int a_idx = 0, b_idx = 0;
     int remaining = out_idx;

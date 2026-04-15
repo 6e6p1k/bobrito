@@ -142,7 +142,6 @@ def test_neg_grad():
 
 def test_relu_grad():
     """relu(x).sum() -> grad = (x > 0)"""
-    bobr.mem_snapshot()
     data = np.array([[-1.0, 2.0, -0.5], [3.0, -4.0, 0.1]], dtype=np.float32)
     
     x_b = make_bobr_leaf(data)
@@ -158,7 +157,6 @@ def test_relu_grad():
 
 def test_exp_grad():
     """exp(x).sum() -> grad = exp(x)"""
-    bobr.mem_snapshot()
     data = np.random.uniform(-1, 1, (3, 4)).astype(np.float32)
     
     x_b = make_bobr_leaf(data)
@@ -174,7 +172,7 @@ def test_exp_grad():
 
 def test_log_grad():
     """log(x).sum() -> grad = 1/x"""
-    bobr.mem_snapshot()
+
     data = np.random.uniform(0.5, 3.0, (3, 4)).astype(np.float32)
     
     x_b = make_bobr_leaf(data)
@@ -195,7 +193,7 @@ def test_log_grad():
 
 def test_add_grad():
     """(a + b).sum() -> grad_a = 1, grad_b = 1"""
-    bobr.mem_snapshot()
+
     a_data = np.random.randn(3, 4).astype(np.float32)
     b_data = np.random.randn(3, 4).astype(np.float32)
     
@@ -223,7 +221,7 @@ def test_sub_grad():
     THIS IS THE CRITICAL TEST. If sub's vjp returns (bwd, bwd) instead of 
     (bwd, neg(bwd)), grad_b will be +1 instead of -1.
     """
-    bobr.mem_snapshot()
+
     a_data = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
     b_data = np.array([[0.5, 1.5, 2.5], [3.5, 4.5, 5.5]], dtype=np.float32)
     
@@ -247,7 +245,7 @@ def test_sub_grad():
     assert ok, f"grad_b: {msg}  (expected all -1s, this is the sub VJP bug)"
 
 def test_mul_grad():
-    bobr.mem_snapshot()
+
     """(a * b).sum() -> grad_a = b, grad_b = a"""
     a_data = np.random.randn(3, 4).astype(np.float32)
     b_data = np.random.randn(3, 4).astype(np.float32)
@@ -274,7 +272,7 @@ def test_mul_grad():
 
 def test_div_grad():
     # print("[debug] Starting div grad test")
-    bobr.mem_snapshot()
+
     """(a / b).sum() -> grad_a = 1/b, grad_b = -a/b^2"""
     a_data = np.random.uniform(0.5, 2.0, (3, 4)).astype(np.float32)
     b_data = np.random.uniform(0.5, 2.0, (3, 4)).astype(np.float32)
@@ -286,18 +284,18 @@ def test_div_grad():
     print(a_b.data)
     print(b_b.data)
 
-    bobr.mem_snapshot()
+
 
 
     grad_buffer_node_info([a_b, b_b])
 
     loss_b = bobr.sum(bobr.div(a_b, b_b), 0, False); loss_b.label = "Loss"
 
-    bobr.mem_snapshot()
+
 
 
     [ga_b, gb_b] = bobr_eval_and_get_grad(loss_b, [a_b, b_b])
-    bobr.mem_snapshot()
+
 
     # print("DATA AFTER EVAL:")
     # print(a_b.data)
@@ -320,7 +318,7 @@ def test_div_grad():
     assert ok, f"grad_a: {msg}"
     ok, msg = check_close("div grad_b", gb_b, gb_t)
     assert ok, f"grad_b: {msg}"
-    bobr.mem_snapshot()
+
 
 
 # ============================================================
@@ -729,32 +727,32 @@ if __name__ == "__main__":
     
     print("\n-- Binary op gradients --")
     run_test("add_grad", test_add_grad)
-    run_test("sub_grad [BUG EXPECTED]", test_sub_grad)
+    run_test("sub_grad", test_sub_grad)
     run_test("mul_grad", test_mul_grad)
     run_test("div_grad", test_div_grad)
     
-    # print("\n-- Matmul gradients --")
-    # run_test("matmul_grad", test_matmul_grad)
-    # run_test("matmul_grad_nonsquare", test_matmul_grad_nonsquare)
+    print("\n-- Matmul gradients --")
+    run_test("matmul_grad", test_matmul_grad)
+    run_test("matmul_grad_nonsquare", test_matmul_grad_nonsquare)
     
-    # print("\n-- Reduction gradients --")
-    # run_test("sum_dim_grad", test_sum_dim_grad)
+    print("\n-- Reduction gradients --")
+    run_test("sum_dim_grad", test_sum_dim_grad)
     
-    # print("\n-- Chain gradients --")
-    # run_test("chain_sub_then_mul [BUG EXPECTED]", test_chain_sub_then_mul)
-    # run_test("chain_matmul_relu_sum", test_chain_matmul_relu_sum)
-    # run_test("chain_log_softmax [BUG EXPECTED]", test_chain_log_softmax)
-    # run_test("shared_input_accumulation", test_shared_input_grad_accumulation)
+    print("\n-- Chain gradients --")
+    run_test("chain_sub_then_mul", test_chain_sub_then_mul)
+    run_test("chain_matmul_relu_sum", test_chain_matmul_relu_sum)
+    run_test("chain_log_softmax", test_chain_log_softmax)
+    run_test("shared_input_accumulation", test_shared_input_grad_accumulation)
     
-    # print("\n-- Numerical gradient checks --")
-    # run_test("numerical_mul", test_numerical_grad_mul)
-    # run_test("numerical_sub [BUG EXPECTED]", test_numerical_grad_sub)
-    # run_test("numerical_div", test_numerical_grad_div)
-    # run_test("numerical_chain (relu(a@b+c))", test_numerical_grad_chain)
+    print("\n-- Numerical gradient checks --")
+    run_test("numerical_mul", test_numerical_grad_mul)
+    run_test("numerical_sub", test_numerical_grad_sub)
+    run_test("numerical_div", test_numerical_grad_div)
+    run_test("numerical_chain (relu(a@b+c))", test_numerical_grad_chain)
     
-    # print("\n-- Cross-entropy --")
-    # run_test("cross_entropy_forward", test_cross_entropy_forward)
-    # run_test("cross_entropy_backward [BUG EXPECTED]", test_cross_entropy_backward)
+    print("\n-- Cross-entropy --")
+    run_test("cross_entropy_forward", test_cross_entropy_forward)
+    run_test("cross_entropy_backward", test_cross_entropy_backward)
     
     # Summary
     print("\n" + "=" * 60)

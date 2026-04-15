@@ -174,6 +174,7 @@ PYBIND11_MODULE(bobr, m) {
         .def("eval", [](shared_ptr<Node>& n) { eval(n); })
         .def("steal_data", py::overload_cast<shared_ptr<Node>&, shared_ptr<Node>>(&steal_data))
         .def("steal_data", py::overload_cast<shared_ptr<Node>&, py::object>(&steal_data))
+        .def("set_label", &Node::set_label)
         .def("get_owned_grad_ptr", [](shared_ptr<Node>& n) { return n->owned_grad->d_data->data(); })
         .def("__repr__", [](const shared_ptr<Node>& n) {
             return make_node_string(n);
@@ -195,11 +196,11 @@ PYBIND11_MODULE(bobr, m) {
 
         // Reduction ops
         .def("sum", [](const shared_ptr<Node>& n, int dim, bool keepdims = false) { return sum(n, dim, keepdims); },
-            py::arg("dim"), py::arg("keepdims") = false)
+            py::arg("dim") = 52, py::arg("keepdims") = false)
         .def("min", [](const shared_ptr<Node>& n, int dim, bool keepdims = false) { return min(n, dim, keepdims); },
-            py::arg("dim"), py::arg("keepdims") = false)
+            py::arg("dim") = 52, py::arg("keepdims") = false)
         .def("max", [](const shared_ptr<Node>& n, int dim, bool keepdims = false) { return max(n, dim, keepdims); },
-            py::arg("dim"), py::arg("keepdims") = false)
+            py::arg("dim") = 52, py::arg("keepdims") = false)
 
         // Shape ops
         .def("reshape", [](const shared_ptr<Node>& n, vector<int> shape) { 
@@ -257,11 +258,11 @@ PYBIND11_MODULE(bobr, m) {
     m.def("min_ld", &min_ld);
     m.def("max_ld", &max_ld);
     m.def("sum", [](shared_ptr<Node> a, int dim, bool keepdims = false) { return sum(a, dim, keepdims); },
-          py::arg("a"), py::arg("dim"), py::arg("keepdims") = false);
+          py::arg("a"), py::arg("dim") = 52, py::arg("keepdims") = false);
     m.def("min", [](shared_ptr<Node> a, int dim, bool keepdims = false) { return min(a, dim, keepdims); },
-          py::arg("a"), py::arg("dim"), py::arg("keepdims") = false);
+          py::arg("a"), py::arg("dim") = 52, py::arg("keepdims") = false);
     m.def("max", [](shared_ptr<Node> a, int dim, bool keepdims = false) { return max(a, dim, keepdims); },
-          py::arg("a"), py::arg("dim"), py::arg("keepdims") = false);
+          py::arg("a"), py::arg("dim") = 52, py::arg("keepdims") = false);
     
     // Shape ops
     m.def("reshape", [](shared_ptr<Node> a, vector<int> shape) { 
@@ -276,8 +277,10 @@ PYBIND11_MODULE(bobr, m) {
     m.def("cross_entropy", &cross_entropy);
     
     // Training helpers
-    m.def("eval", [](shared_ptr<Node> node, bool export_graph = false) { eval(node, export_graph); },
+    m.def("eval", [](shared_ptr<Node> node, bool export_graph) { eval(node, export_graph); },
           py::arg("node"), py::arg("export_graph") = false);
+    m.def("debug_eval", [](shared_ptr<Node> node, bool export_graph, bool disposable) { debug_eval(node, export_graph, disposable); },
+          py::arg("node"), py::arg("export_graph") = false, py::arg("disposable") = true);
     m.def("make_model", &make_model);
 
     m.def("sync", []() { CUDA_CHECK(); });

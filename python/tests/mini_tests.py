@@ -83,7 +83,7 @@ x_train, x_test, y_train_oh, y_test_oh = load_dataset()
 
 # Hyperparameters
 batch_size = 64
-num_epochs = 1
+num_epochs = 15
 learning_rate = 1e-3
 num_batches = min(10, len(x_train) // batch_size)  # Just 10 batches for quick demo
 
@@ -94,8 +94,8 @@ try:
     y = bobr.normal([batch_size, 1]);  y.label = "Y"
     logits, loss, g = define_model(x, y)
     g.build_backward()
-    print(loss)
-    print(g.weights)
+    # print(loss)
+    # print(g.weights)
 
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch+1}/{num_epochs}")
@@ -114,29 +114,28 @@ try:
             # Create input nodes from numpy arrays
             # Convert to nested lists for BOBR
             
-            print(f"{batch_x.shape = }")
-            print(f"{batch_y.shape = }")
-            print(f"{x.shape = }")
-            print(f"{y.shape = }")
+            # print(f"{batch_x.shape = }")
+            # print(f"{batch_y.shape = }")
+            # print(f"{x.shape = }")
+            # print(f"{y.shape = }")
 
 
             x.steal_data(batch_x)
             y.steal_data(batch_y)
 
             # bobr.eval(loss, True)
-            g.eval()
+            g.eval(False)
             g.sgd_step(learning_rate)
 
-            print(f"Targets: {y.data[0] = }")
-            print(f"Proper Targets: {batch_y[0] = }")
-            print(f"Logits: {logits.data[0] = }")
-            print(f"Loss: {loss.data = }")
-            break
-            
+            # print(f"Targets: {y.data[0] = }")
+            # print(f"Proper Targets: {batch_y[0] = }")
+            # print(f"Logits: {logits.data[0] = }")
+            # print(f"Loss: {loss.data = }")
             # Progress indicator
             if (batch_idx + 1) % max(1, num_batches // 5) == 0:
                 progress = (batch_idx + 1) / num_batches * 100
                 print(f"  Batch {batch_idx+1}/{num_batches} ({progress:.0f}%)", end="\r")
+                print(f"  Loss: {loss.data}")
 
         print(f"  Batch {num_batches}/{num_batches} (100%)  ✓")
         

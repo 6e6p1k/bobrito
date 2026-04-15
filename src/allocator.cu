@@ -136,9 +136,9 @@ void MemoryPool::free(Block* b_ptr)
     b_ptr->mom->free_block(b_ptr);
 
     // for stats & debugging purposes
-    std::cout << "\nALLOCATOR. BLOCK FREED ===============\n";
-    std::cout << print_block(b_ptr);
-    std::cout << "========================================\n\n";
+    // std::cout << "\nALLOCATOR. BLOCK FREED ===============\n";
+    // std::cout << print_block(b_ptr);
+    // std::cout << "========================================\n\n";
     allocated_blocks.erase(std::remove(allocated_blocks.begin(), allocated_blocks.end(), b_ptr), allocated_blocks.end());
     total_allocations--;
     total_bytes_in_use -= b_ptr->size;
