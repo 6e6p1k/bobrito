@@ -187,15 +187,25 @@ void Graph::backward() {
     }
 }
 
-void Graph::eval() {
-    fwd_pass();
-    
+void Graph::eval(bool debug) {
+
+    if (debug) {
+        debug_pass(fwd_order);
+    } else {
+        fwd_pass();
+    }
+
     if (need_backward()) {
         if (bwd_order.size() < 0) throw logic_error("Backward order is empty!"); 
-        bwd_pass();
+        if (debug) {
+            debug_pass(bwd_order);
+        } else {
+            bwd_pass();
+        }
     }
     if (disposable) {
         detach_grads_from_bwd_graph();
+        clean_fwd_grad_buffers();
     }
 }
 
@@ -243,14 +253,38 @@ void Graph::locate_leaf_w_grad_nodes() {
 void Graph::pass(vector<Node*> order) {
     for (Node* node : order) {
         if (!node || !node->prim || !node->is_meta()) continue;
-        cout << "EVAL: " << node->label << " [" << node->prim->name() << "]" << endl;
         node->prim->allocate(node);
         node->prim->eval(node);
     }
 }
 
-void Graph::fwd_pass() { return pass(fwd_order); }
-void Graph::bwd_pass() { return pass(bwd_order); }
+void Graph::debug_pass(vector<Node*> order) {
+    if (order.size() == 0) cout << "<========ORDER IS EMPTY!======>\n";
+    if (order[0] && order[0]->is_bwd) cout<<"\nINSIDE BWD PASS =================================>\n";
+    if (order[0] && !order[0]->is_bwd) cout<<"\nINSIDE FWD PASS =================================>\n";
+    for (Node* node : order) {
+        if (!node || !node->prim || !node->is_meta()) continue;
+        cout << "[" << node->prim->name() << "]" << endl;
+        node->prim->allocate(node);
+
+        cout<<"DATA PTR: " << node->get_data() << endl;
+        node->prim->eval(node);
+        cout<<"DATA AFTER EVAL:\n";
+        print_node(make_shared<Node>(*node));
+        cout << print_block(node->d_data->b_ptr);
+        if (order[order.size() - 1] == node) continue;
+        cout<<"\n----------------------------------------------\n\n";
+
+    }
+    cout<<"INSIDE PASS =================================<\n\n";
+}
+
+void Graph::fwd_pass() { pass(fwd_order); }
+void Graph::bwd_pass() { 
+    pass(bwd_order); 
+    // cout << "\nIMMEDIATELY AFTER BWD PASS: \n";
+    // print_allocated_blocks();
+}
 
 void Graph::_backward() {
     if (root->requires_grad || root->inputs.size() == 0)
@@ -295,6 +329,15 @@ void Graph::detach_grads_from_bwd_graph() {
             node->owned_grad = copy_node_no_prim_before_eval(node->owned_grad);
     }
 }
+
+void Graph::clean_fwd_grad_buffers() {
+    for (auto node : fwd_order) {
+        if (node) { 
+            node->grad_buffer.reset();
+            node->grad_node.reset();
+        }
+    }
+}
 // ============================================================
 //                       PUBLIC API
 // ============================================================
@@ -308,4 +351,11 @@ void eval(shared_ptr<Node> root, bool export_graph) {
     g.backward();
     if (export_graph) root->export_graph();
     g.eval();
+}
+
+void debug_eval(shared_ptr<Node> root, bool export_graph, bool disposable) {
+    Graph g = Graph(root, disposable);
+    g.backward();
+    if (export_graph) root->export_graph();
+    g.eval(true);
 }

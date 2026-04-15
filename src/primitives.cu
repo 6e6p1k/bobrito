@@ -453,7 +453,7 @@ static struct : Primitive {
              shared_ptr<Node> out[]) override {
         auto A = copy_node_no_prim(fwd->inputs[0]);
         auto B = copy_node_no_prim(fwd->inputs[1]);
-
+                
         out[0] = mul(bwd, B);
         out[1] = mul(bwd, A);
     }
@@ -470,9 +470,9 @@ shared_ptr<Node> mul(shared_ptr<Node> a, shared_ptr<Node> b) {
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override {
-        cout<<"BEFORE DIV KERNEL\n";
-        cout<<"A ptr: " << node->inputs[0]->get_data() << ", B ptr: " << node->inputs[1]->get_data() << "\n"; 
-        cout<<"Res ptr: "<< node->get_data() << endl;
+        // cout<<"BEFORE DIV KERNEL\n";
+        // cout<<"A ptr: " << node->inputs[0]->get_data() << ", B ptr: " << node->inputs[1]->get_data() << "\n"; 
+        // cout<<"Res ptr: "<< node->get_data() << endl;
         elemwise_eval<cuDiv>(node); 
     }
     const string name() override { return "Div"; }
@@ -481,7 +481,6 @@ static struct : Primitive {
              shared_ptr<Node> out[]) override {
         auto A = copy_node_no_prim(fwd->inputs[0]);
         auto B = copy_node_no_prim(fwd->inputs[1]);
-
         out[0] = div(bwd, B);
         // bwd_div outputs the same shape as prev_grad, 
         // so need to reduce it to B's shape
@@ -499,11 +498,17 @@ shared_ptr<Node> div(shared_ptr<Node> a, shared_ptr<Node> b) {
 // ============================================================
 static struct : Primitive {
     void eval(Node* node) override { 
+
+        // cout<<"\nINSIDE BWD_DIV =================================>\n";
         int n = node->get_size();
         auto A = node->inputs[0];
         auto B = node->inputs[1];
         auto prev_grad = node->inputs[2];
 
+        // cout<<"(input a and input b are (should be) the copies, not the actual ones)\n";
+        // cout<<"INPUT A DATA PTR: " << A->get_data() << ", INPUT B DATA PTR: " << B->get_data() << endl;
+        // cout<<"PREVIOUS GRAD DATA PTR: " << prev_grad->get_data() << endl;
+        // cout<<"Res ptr: "<< node->get_data() << endl;
         // Resulting grad will have the same shape as previous grad, 
         // so we broadcast A and B to prev_grad's shape if necessary.
 
@@ -512,11 +517,9 @@ static struct : Primitive {
             A->get_strides(), B->get_strides(),
             node->get_shape(), node->get_ndim(),
             A->get_ndim(), B->get_ndim());
-        
-        cout<<"BEFORE BWD_DIV KERNEL\n";
-        cout<<"A ptr: " << node->inputs[0]->get_data() << ", B ptr: " << node->inputs[1]->get_data() 
-        << ", prev_grad ptr: " << node->inputs[2]->get_data() << "\n"; 
-        cout<<"Res ptr: "<< node->get_data() << endl;
+
+        // cout<<"A BROADCASTED STRIDES: " << info.a_strides << endl;
+        // cout<<"B BROADCASTED STRIDES: " << info.b_strides << endl;
 
         kernels::bwd_div<<<GRID_SIZE(n), BLOCK_SIZE>>>(
             A->get_data(), B->get_data(), prev_grad->get_data(), node->get_data(), info);
@@ -991,8 +994,9 @@ static struct : Primitive {
     void eval(Node* node) override {}
     void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
              shared_ptr<Node> out[]) override {
-        out[0] = reshape(bwd, fwd->inputs[0]->get_shape(),
+        auto reshaped = reshape(bwd, fwd->inputs[0]->get_shape(),
                          fwd->inputs[0]->get_ndim());
+        out[0] = contiguous(reshaped);
     }
     void allocate(Node* node) override {
         node->d_data = node->inputs[0]->d_data; // share buffer

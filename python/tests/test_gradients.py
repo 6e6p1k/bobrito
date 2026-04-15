@@ -41,8 +41,8 @@ def make_bobr_leaf(data_np, requires_grad=True):
 
 def bobr_eval_and_get_grad(loss_node, leaf_nodes):
     """Evaluate forward+backward and return gradients as numpy arrays."""
-    # loss_node.eval()
-    bobr.eval(loss_node, True)
+    loss_node.eval()
+    # bobr.eval(loss_node, True)
     bobr.sync()
     grads = []
     for leaf in leaf_nodes:
@@ -286,23 +286,30 @@ def test_div_grad():
     print(a_b.data)
     print(b_b.data)
 
+    bobr.mem_snapshot()
+
 
     grad_buffer_node_info([a_b, b_b])
 
     loss_b = bobr.sum(bobr.div(a_b, b_b), 0, False); loss_b.label = "Loss"
+
+    bobr.mem_snapshot()
+
+
     [ga_b, gb_b] = bobr_eval_and_get_grad(loss_b, [a_b, b_b])
-    
-    print("DATA AFTER EVAL:")
-    print(a_b.data)
-    print(b_b.data)
+    bobr.mem_snapshot()
+
+    # print("DATA AFTER EVAL:")
+    # print(a_b.data)
+    # print(b_b.data)
 
     a_t = torch.from_numpy(a_data).cuda().requires_grad_(True)
     b_t = torch.from_numpy(b_data).cuda().requires_grad_(True)
     loss_t = (a_t / b_t).sum()
     [ga_t, gb_t] = torch_eval_and_get_grad(loss_t, [a_t, b_t])
     
-    print(f"    [debug] div grad_a bobr={ga_b.flatten()}, \n\ttorch={ga_t.flatten()}"
-          f"\n    [debug] div grad_b bobr={gb_b.flatten()}, \n\ttorch={gb_t.flatten()}")
+    # print(f"    [debug] div grad_a bobr={ga_b.flatten()}, \n\ttorch={ga_t.flatten()}"
+    #       f"\n    [debug] div grad_b bobr={gb_b.flatten()}, \n\ttorch={gb_t.flatten()}")
 
     # print(a_b.is_owned_grad)
     # print(b_b.is_owned_grad)

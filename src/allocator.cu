@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include <string>
 #include <sstream>
+#include <vector>
+#include <algorithm>
+#include <iomanip>
 
 #include "allocator.cuh"
 #include "allocator.cuh"
@@ -132,6 +135,7 @@ void MemoryPool::free(Block* b_ptr)
     b_ptr->mom->free_block(b_ptr);
 
     // for stats & debugging purposes
+    allocated_blocks.erase(std::remove(allocated_blocks.begin(), allocated_blocks.end(), b_ptr), allocated_blocks.end());
     total_allocations--;
     total_bytes_in_use -= b_ptr->size;
 }
@@ -160,7 +164,7 @@ void MemoryPool::allocate(Block** dst, size_t bytes) {
             // for stats & debugging purposes
             total_allocations++;
             total_bytes_in_use += TIER_SIZES[tier];
-            
+            allocated_blocks.push_back(*dst);
             return;
         }
         grid = grid->next_free_grid;
@@ -172,6 +176,7 @@ void MemoryPool::allocate(Block** dst, size_t bytes) {
     // for stats & debugging purposes
     total_allocations++;
     total_bytes_in_use += TIER_SIZES[tier];
+    allocated_blocks.push_back(*dst);
 }
 
 // private constructor
@@ -217,6 +222,38 @@ MemSnapshot snapshot() {
     return s;
 }
 
+std::string print_block(const Block* block) {
+    std::ostringstream oss;
+    oss << "\tBlock ptr: " << block << "\n"
+        << "\tData size: " << block->size << " bytes" << "\n"
+        << "\tData size: " << block->size / sizeof(float) << " floats" << "\n"
+        << "\tData ptr: " << block->d_ptr << "\n"
+        << "\tData (first 12 floats): ";
+        int display_size = std::min(block->size, 12 * sizeof(float));
+        float tmp[display_size];
+        cudaMemcpy(tmp, block->d_ptr, std::min(block->size, display_size * sizeof(float)), cudaMemcpyDeviceToHost);
+        oss << "[";
+        for (int i = 0; i < display_size && i * sizeof(float) < block->size; i++) {
+            oss << std::fixed << std::setprecision(6) << tmp[i] << " ";
+        }
+        oss << "]\n"
+        << "\tGrid ptr: " << block->mom << "\n";
+    return oss.str();
+}
+
+std::string allocated_blocks_data_string(const std::vector<Block*>& blocks) {
+    std::ostringstream oss;
+    oss << "\nAllocated blocks ======================\n";
+    for (const auto& block : blocks) {
+        oss << print_block(block);
+        if (block != blocks.back()) {
+            oss << std::endl;
+        }
+    }
+    oss << "======================================\n";
+    return oss.str();
+}
+
 std::string make_snapshot_string(const std::string& label, const MemSnapshot& s) {
     size_t used_mb  = (s.cuda_total - s.cuda_free) / (1024 * 1024);
     size_t free_mb  = s.cuda_free  / (1024 * 1024);
@@ -231,6 +268,11 @@ std::string make_snapshot_string(const std::string& label, const MemSnapshot& s)
 
 void print_snapshot(const std::string& label, const MemSnapshot& s) {
     std::cout << make_snapshot_string(label, s);
+}
+
+void print_allocated_blocks() {
+    auto blocks = MemoryPool::call().allocated_blocks;
+    std::cout << allocated_blocks_data_string(blocks);
 }
 // </Memory pool class>
 

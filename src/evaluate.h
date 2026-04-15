@@ -13,9 +13,10 @@ struct Graph {
     public: 
     Graph(std::shared_ptr<Node> loss, bool disposable = true);
     void backward();
-    void eval();
+    void eval(bool debug = false);
     void sgd_step(float lr);
     void detach_grads_from_bwd_graph();
+    void clean_fwd_grad_buffers();
 
     private:
     // CHECKS
@@ -29,6 +30,7 @@ struct Graph {
     void locate_leaf_w_grad_nodes();
     void locate_bwd_nodes();
     void pass(std::vector<Node*> order);
+    void debug_pass(std::vector<Node*> order);
     void fwd_pass();
     void bwd_pass();
     void _backward();
@@ -36,3 +38,4 @@ struct Graph {
 std::shared_ptr<Graph> make_model(std::shared_ptr<Node> root);
 void backward(std::shared_ptr<Node> loss);
 void eval(std::shared_ptr<Node> root, bool export_graph = false);
+void debug_eval(std::shared_ptr<Node> root, bool export_graph, bool disposable);

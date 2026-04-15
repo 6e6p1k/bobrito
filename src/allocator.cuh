@@ -49,6 +49,8 @@ class MemoryPool
     size_t total_bytes_in_use = 0;
 
 public:
+    std::vector<Block*> allocated_blocks;
+
     // access
     static MemoryPool& call();
 
@@ -96,6 +98,8 @@ struct MemSnapshot {
 MemSnapshot snapshot();
 std::string make_snapshot_string(const std::string& label, const MemSnapshot& s);
 void print_snapshot(const std::string& label, const MemSnapshot& s);
+void print_allocated_blocks();
+std::string print_block(const Block* block);
 
 // ===============    CONTENT DATA   ==================
 struct ContentData

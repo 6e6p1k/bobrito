@@ -286,6 +286,9 @@ PYBIND11_MODULE(bobr, m) {
         auto s = snapshot();
         print_snapshot("VRAM SUMMARY", s);
     });
+    m.def("see_allocated_blocks", []() {
+        print_allocated_blocks();
+    });
     m.def("export_graph", [](shared_ptr<Node> node) { node->export_graph(); });
 }
 
