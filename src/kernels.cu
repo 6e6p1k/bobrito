@@ -80,9 +80,21 @@ __global__ void scale(float* data, float limit, int n) {
     if (i < n) data[i] = data[i] * 2.0f * limit - limit;
 }
 
-__global__ void bwd_div(float* src, float* dst, float* prev_grad, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) dst[i] = prev_grad[i] * 1.0f / src[i];
+__global__ void bwd_div(float* A, float* B, float* prev_grad, float* dst, BroadcastInfo info) {
+    int out_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    // decompose flat index into nd, then recompose for each input
+    int a_idx = 0, b_idx = 0;
+    int remaining = out_idx;
+    for (int i = info.ndim - 1; i >= 0; i--) {
+        int coord = remaining % info.out_shape[i];
+        remaining /= info.out_shape[i];
+        a_idx += coord * info.a_strides[i];
+        b_idx += coord * info.b_strides[i];
+    }
+    // C = A / B
+    // This function computes grad for B
+    // dB = -dL/dC * A / B^2 = - prev_grad * A / pow(B, 2)
+    dst[out_idx] = -prev_grad[out_idx] * A[a_idx] / powf(B[b_idx], 2.0f);
 }
 
 __global__ void max_min_bwd_last_dim(

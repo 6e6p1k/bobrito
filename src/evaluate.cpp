@@ -164,7 +164,7 @@ void eval_helper(vector<Node*>& fwd_order, vector<Node*>& bwd_order) {
         if (!node->is_data()) node->d_data = make_shared<ContentData>();
         if (!node->is_data_allocated()) node->d_data->allocate(size);
 
-        // DEBUG(node, "GEVAL LOOP");
+        // (node, "GEVAL LOOP");
 
         node->prim->eval(node);
     }
@@ -189,11 +189,14 @@ void Graph::backward() {
 
 void Graph::eval() {
     fwd_pass();
+    
     if (need_backward()) {
         if (bwd_order.size() < 0) throw logic_error("Backward order is empty!"); 
         bwd_pass();
     }
-    if (disposable) detach_grads_from_bwd_graph();
+    if (disposable) {
+        detach_grads_from_bwd_graph();
+    }
 }
 
 // CHECKS
@@ -230,9 +233,8 @@ void Graph::locate_leaf_w_grad_nodes() {
     if (require_grad_nodes.size() > 0)
         throw logic_error("require_grad_nodes is already filled.");
     for (auto node : fwd_order) {
-        if (!node->is_meta()) continue;
+        if (!node || !node->is_meta()) continue;
         if (node->requires_grad) {
-            DEBUG(node, "PUSHING TO REQUIRE_GRAD_NODES")
             require_grad_nodes.push_back(node);
         }
     }
@@ -241,6 +243,7 @@ void Graph::locate_leaf_w_grad_nodes() {
 void Graph::pass(vector<Node*> order) {
     for (Node* node : order) {
         if (!node || !node->prim || !node->is_meta()) continue;
+        cout << "EVAL: " << node->label << " [" << node->prim->name() << "]" << endl;
         node->prim->allocate(node);
         node->prim->eval(node);
     }
@@ -267,9 +270,30 @@ void Graph::_backward() {
     build_backward(root, seed, uses);
 }
 
+bool check_node_before_detaching(shared_ptr<Node> node) {
+    if (!node) return false;
+    if (!node->is_meta()) return false;
+    if (!node->is_data()) return false;
+    if (!node->is_data_allocated()) return false;
+    if (!node->prim) return false;
+    return true;
+}
+
+std::shared_ptr<Node> detach_helper(shared_ptr<Node> node) {
+    shared_ptr<Node> out_node = make_shared<Node>();
+    out_node->h_meta = node->h_meta;
+    out_node->d_data = node->d_data;
+    out_node->is_bwd = node->is_bwd;
+    out_node->set_label(node->label + ".copy()");
+    return out_node;
+}
+
 void Graph::detach_grads_from_bwd_graph() {
-    for (auto grad_leaf : require_grad_nodes)
-        grad_leaf->owned_grad = copy_node_no_prim_before_eval(grad_leaf->owned_grad);
+    for (auto node : require_grad_nodes) {
+        if (!node || !node->requires_grad || !node->owned_grad) continue;
+        if (check_node_before_detaching(node->owned_grad))
+            node->owned_grad = copy_node_no_prim_before_eval(node->owned_grad);
+    }
 }
 // ============================================================
 //                       PUBLIC API

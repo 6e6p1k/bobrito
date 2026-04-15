@@ -119,7 +119,7 @@ PYBIND11_MODULE(bobr, m) {
             shared_ptr<Node> node = make_shared<Node>();
             node->requires_grad = requires_grad;
             node->h_meta = make_shape_data(shape.size(), shape.data());
-            node->prim = nullptr;
+            node->prim = &prim_leaf;
             node->d_data = make_shared<ContentData>();
             node->d_data->allocate(node->get_size());
 
@@ -166,11 +166,15 @@ PYBIND11_MODULE(bobr, m) {
         .def_property_readonly("is_meta", &Node::is_meta)
         .def_property_readonly("is_data", &Node::is_data)
         .def_property_readonly("is_data_allocated", &Node::is_data_allocated)
-
+        .def_property_readonly("is_grad_buffer", &Node::is_grad_buffer)
+        .def_property_readonly("is_grad_node", &Node::is_grad_node)
+        .def_property_readonly("is_owned_grad", [](const shared_ptr<Node>& n) { return n->owned_grad != nullptr && n->owned_grad->is_data_allocated(); })
+        .def_property_readonly("data_ptr", [](const shared_ptr<Node>& n) { return n->get_data(); })
 
         .def("eval", [](shared_ptr<Node>& n) { eval(n); })
         .def("steal_data", py::overload_cast<shared_ptr<Node>&, shared_ptr<Node>>(&steal_data))
         .def("steal_data", py::overload_cast<shared_ptr<Node>&, py::object>(&steal_data))
+        .def("get_owned_grad_ptr", [](shared_ptr<Node>& n) { return n->owned_grad->d_data->data(); })
         .def("__repr__", [](const shared_ptr<Node>& n) {
             return make_node_string(n);
         })
@@ -213,7 +217,7 @@ PYBIND11_MODULE(bobr, m) {
             }
             return py_lst;
         })
-        .def("eval", [](shared_ptr<Graph>& g) { g->eval(); })
+        .def("eval", &Graph::eval)
         .def("build_backward", &Graph::backward)
         .def("sgd_step", &Graph::sgd_step, py::arg("learning_rate"))
         .def("detach_grads", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); });
@@ -282,5 +286,6 @@ PYBIND11_MODULE(bobr, m) {
         auto s = snapshot();
         print_snapshot("VRAM SUMMARY", s);
     });
+    m.def("export_graph", [](shared_ptr<Node> node) { node->export_graph(); });
 }
 

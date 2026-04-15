@@ -95,6 +95,8 @@ struct Node {
     bool requires_grad = false;
     bool is_bwd = false;
 
+    bool is_grad_buffer();
+    bool is_grad_node();
     bool is_label();
     bool is_meta();
     bool is_data();
@@ -137,6 +139,15 @@ struct Primitive {
     virtual const std::string symbol() = 0;
     virtual ~Primitive() = default;
 };
+
+static struct : Primitive {
+    void eval(Node* node) override {}
+    void vjp(std::shared_ptr<Node> fwd, std::shared_ptr<Node> dC,
+             std::shared_ptr<Node> out[]) override {}
+    const std::string name() override { return "Leaf"; }
+    const std::string symbol() override { return "leaf"; }
+} prim_leaf;
+
 
 
 

@@ -18,6 +18,7 @@
 #define BLOCK_SIZE 256
 #define SCALAR(n) (static_pointer_cast<ScalarNode>(n))
 
+
 using namespace std;
 static int g_seed = 0;
 
@@ -29,6 +30,15 @@ void CUDA_CHECK() {
     }
 }
 
+void CUDA_LAST_ERROR() {
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
+    {
+        // print the CUDA error message and exit
+        printf("CUDA error: %s\n", cudaGetErrorString(error));
+        exit(-1);
+    }
+}
 
 // ============================================================
 //                         COPY HELPER
@@ -55,14 +65,6 @@ shared_ptr<Node> copy_node_no_prim(shared_ptr<Node> node) {
 // ============================================================
 //                         LEAF INITIATION
 // ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {}
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Leaf"; }
-    const string symbol() override { return "leaf"; }
-} prim_leaf;
-
 shared_ptr<Node> make_leaf_node(int* shape, int ndim,
                                 shared_ptr<ContentData> device_data) {
     shared_ptr<Node> out_node = make_node(&prim_leaf, {}, shape, ndim);
@@ -432,7 +434,7 @@ static struct : Primitive {
     void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
              shared_ptr<Node> out[]) override {
         out[0] = bwd;
-        out[1] = bwd;
+        out[1] = neg(bwd);
     }
     const string name() override { return "Sub"; }
     const string symbol() override { return "-"; }
@@ -467,7 +469,10 @@ shared_ptr<Node> mul(shared_ptr<Node> a, shared_ptr<Node> b) {
 //                          DIV
 // ============================================================
 static struct : Primitive {
-    void eval(Node* node) override { 
+    void eval(Node* node) override {
+        cout<<"BEFORE DIV KERNEL\n";
+        cout<<"A ptr: " << node->inputs[0]->get_data() << ", B ptr: " << node->inputs[1]->get_data() << "\n"; 
+        cout<<"Res ptr: "<< node->get_data() << endl;
         elemwise_eval<cuDiv>(node); 
     }
     const string name() override { return "Div"; }
@@ -478,7 +483,10 @@ static struct : Primitive {
         auto B = copy_node_no_prim(fwd->inputs[1]);
 
         out[0] = div(bwd, B);
-        out[1] = bwd_div(fwd, bwd);
+        // bwd_div outputs the same shape as prev_grad, 
+        // so need to reduce it to B's shape
+        auto B_grad = bwd_div(A, B, bwd);
+        out[1] = reduce_to_shape(B_grad, B->get_shape(), B->get_ndim());
     }
 } prim_div;
 
@@ -492,15 +500,38 @@ shared_ptr<Node> div(shared_ptr<Node> a, shared_ptr<Node> b) {
 static struct : Primitive {
     void eval(Node* node) override { 
         int n = node->get_size();
+        auto A = node->inputs[0];
+        auto B = node->inputs[1];
+        auto prev_grad = node->inputs[2];
+
+        // Resulting grad will have the same shape as previous grad, 
+        // so we broadcast A and B to prev_grad's shape if necessary.
+
+        auto info = broadcast::elemwise(
+            A->get_shape(), B->get_shape(),
+            A->get_strides(), B->get_strides(),
+            node->get_shape(), node->get_ndim(),
+            A->get_ndim(), B->get_ndim());
+        
+        cout<<"BEFORE BWD_DIV KERNEL\n";
+        cout<<"A ptr: " << node->inputs[0]->get_data() << ", B ptr: " << node->inputs[1]->get_data() 
+        << ", prev_grad ptr: " << node->inputs[2]->get_data() << "\n"; 
+        cout<<"Res ptr: "<< node->get_data() << endl;
+
         kernels::bwd_div<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), node->get_data(), node->inputs[1]->get_data(), n);
+            A->get_data(), B->get_data(), prev_grad->get_data(), node->get_data(), info);
+
+        CUDA_CHECK();
+        CUDA_LAST_ERROR();
     }
     const string name() override { return "BwdDiv"; }
     const string symbol() override { return "bwd_div"; }
 } prim_bwd_div;
 
-shared_ptr<Node> bwd_div(shared_ptr<Node> fwd, shared_ptr<Node> bwd) {
-    return elemwise_helper(&prim_bwd_div, fwd, bwd);
+shared_ptr<Node> bwd_div(shared_ptr<Node> A_copy, shared_ptr<Node> B_copy, shared_ptr<Node> bwd) {
+    auto node = make_node(&prim_bwd_div, {A_copy, B_copy, bwd},
+                          bwd->get_shape(), bwd->get_ndim());
+    return node;
 }
 
 // ============================================================

@@ -22,7 +22,7 @@ std::shared_ptr<Node> mul(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
 std::shared_ptr<Node> div(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
 std::shared_ptr<Node> pow(std::shared_ptr<Node> a, float exponent);
 std::shared_ptr<Node> matmul(std::shared_ptr<Node> a, std::shared_ptr<Node> b); // kinda
-std::shared_ptr<Node> bwd_div(std::shared_ptr<Node> fwd, std::shared_ptr<Node> bwd);
+std::shared_ptr<Node> bwd_div(std::shared_ptr<Node> A_copy, std::shared_ptr<Node> B_copy, std::shared_ptr<Node> bwd);
 std::shared_ptr<Node> bwd_pow(std::shared_ptr<Node> fwd, std::shared_ptr<Node> bwd);
 
 // reductions

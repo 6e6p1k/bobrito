@@ -1,0 +1,217 @@
+EVAL:  [Leaf]
+EVAL: .exp() [Exp]
+EVAL:  [Leaf]
+EVAL: .log() [Log]
+EVAL:  [Leaf]
+EVAL:  [Leaf]
+EVAL: @ [MatMul]
+EVAL:  [Leaf]
+EVAL:  [Leaf]
+EVAL: - [Sub]
+Graph was successfully exported to file 'graph.pdf'
+EVAL:  [Leaf]
+EVAL: - [Neg]
+EVAL: -.reshape() [Reshape]
+EVAL: -.reshape().contiguous() [Contiguous]
+EVAL: -.reshape().contiguous().sum(dim=-1)() [SumLD]
+EVAL: BWD_START [Full]
+EVAL: -.reshape().contiguous()_grad [ExpandLD]
+EVAL: -.reshape()_grad [Contiguous]
+EVAL: -_grad [Reshape]
+EVAL: _grad [Neg]
+[VRAM SUMMARY]
+  CUDA: 1626 MB used / 11769 MB total (10142 MB free)
+  Pool: used: 0, bytes used: 0
+
+Graph was successfully exported to file 'graph.pdf'
+EVAL:  [Leaf]
+EVAL: .relu() [ReLU]
+EVAL: .relu().reshape() [Reshape]
+EVAL: .relu().reshape().contiguous() [Contiguous]
+EVAL: .relu().reshape().contiguous().sum(dim=-1)() [SumLD]
+EVAL: .copy() [Identity]
+EVAL: BWD_START [Full]
+EVAL: .relu().reshape().contiguous()_grad [ExpandLD]
+EVAL: .relu().reshape()_grad [Contiguous]
+EVAL: .relu()_grad [Reshape]
+EVAL: _grad [BwdReLU]
+[VRAM SUMMARY]
+  CUDA: 1626 MB used / 11769 MB total (10142 MB free)
+  Pool: used: 0, bytes used: 0
+
+Graph was successfully exported to file 'graph.pdf'
+EVAL:  [Leaf]
+EVAL: .exp() [Exp]
+EVAL: .exp().reshape() [Reshape]
+EVAL: .exp().reshape().contiguous() [Contiguous]
+EVAL: .exp().reshape().contiguous().sum(dim=-1)() [SumLD]
+EVAL: .exp().copy() [Identity]
+EVAL: BWD_START [Full]
+EVAL: .exp().reshape().contiguous()_grad [ExpandLD]
+EVAL: .exp().reshape()_grad [Contiguous]
+EVAL: .exp()_grad [Reshape]
+EVAL: _grad [Mul]
+[VRAM SUMMARY]
+  CUDA: 1626 MB used / 11769 MB total (10142 MB free)
+  Pool: used: 0, bytes used: 0
+
+Graph was successfully exported to file 'graph.pdf'
+EVAL:  [Leaf]
+EVAL: .log() [Log]
+EVAL: .log().reshape() [Reshape]
+EVAL: .log().reshape().contiguous() [Contiguous]
+EVAL: .log().reshape().contiguous().sum(dim=-1)() [SumLD]
+EVAL: BWD_START [Full]
+EVAL: .log().reshape().contiguous()_grad [ExpandLD]
+EVAL: .log().reshape()_grad [Contiguous]
+EVAL: .log()_grad [Reshape]
+EVAL: .copy() [Identity]
+EVAL: _grad [Div]
+BEFORE DIV KERNEL
+A ptr: 0x7fb8af400a00, B ptr: 0x7fb8af400600
+Res ptr: 0x7fb8af400800
+[VRAM SUMMARY]
+  CUDA: 1626 MB used / 11769 MB total (10142 MB free)
+  Pool: used: 0, bytes used: 0
+
+Graph was successfully exported to file 'graph.pdf'
+EVAL:  [Leaf]
+EVAL:  [Leaf]
+EVAL: + [Add]
+EVAL: +.reshape() [Reshape]
+EVAL: +.reshape().contiguous() [Contiguous]
+EVAL: +.reshape().contiguous().sum(dim=-1)() [SumLD]
+EVAL: BWD_START [Full]
+EVAL: +.reshape().contiguous()_grad [ExpandLD]
+EVAL: +.reshape()_grad [Contiguous]
+EVAL: _grad [Reshape]
+[VRAM SUMMARY]
+  CUDA: 1626 MB used / 11769 MB total (10142 MB free)
+  Pool: used: 0, bytes used: 0
+
+Graph was successfully exported to file 'graph.pdf'
+EVAL:  [Leaf]
+EVAL:  [Leaf]
+EVAL: - [Sub]
+EVAL: -.reshape() [Reshape]
+EVAL: -.reshape().contiguous() [Contiguous]
+EVAL: -.reshape().contiguous().sum(dim=-1)() [SumLD]
+EVAL: BWD_START [Full]
+EVAL: -.reshape().contiguous()_grad [ExpandLD]
+EVAL: -.reshape()_grad [Contiguous]
+EVAL: _grad [Reshape]
+EVAL: _grad [Neg]
+[VRAM SUMMARY]
+  CUDA: 1626 MB used / 11769 MB total (10142 MB free)
+  Pool: used: 0, bytes used: 0
+
+Graph was successfully exported to file 'graph.pdf'
+EVAL:  [Leaf]
+EVAL:  [Leaf]
+EVAL: * [Mul]
+EVAL: *.reshape() [Reshape]
+EVAL: *.reshape().contiguous() [Contiguous]
+EVAL: *.reshape().contiguous().sum(dim=-1)() [SumLD]
+EVAL: BWD_START [Full]
+EVAL: *.reshape().contiguous()_grad [ExpandLD]
+EVAL: *.reshape()_grad [Contiguous]
+EVAL: *_grad [Reshape]
+EVAL: .copy() [Identity]
+EVAL: _grad [Mul]
+EVAL: .copy() [Identity]
+EVAL: _grad [Mul]
+[VRAM SUMMARY]
+  CUDA: 1626 MB used / 11769 MB total (10142 MB free)
+  Pool: used: 0, bytes used: 0
+
+Graph was successfully exported to file 'graph.pdf'
+EVAL: A [Leaf]
+EVAL: B [Leaf]
+EVAL: A/B [Div]
+BEFORE DIV KERNEL
+A ptr: 0x7fb8af401000, B ptr: 0x7fb8af400600
+Res ptr: 0x7fb8af400200
+EVAL: A/B.reshape() [Reshape]
+EVAL: A/B.reshape().contiguous() [Contiguous]
+EVAL: Loss [SumLD]
+EVAL: BWD_START [Full]
+EVAL: A/B.reshape().contiguous()_grad [ExpandLD]
+EVAL: A/B.reshape()_grad [Contiguous]
+EVAL: A/B_grad [Reshape]
+EVAL: B.copy() [Identity]
+EVAL: A_grad [Div]
+BEFORE DIV KERNEL
+A ptr: 0x7fb8af400c00, B ptr: 0x7fb8af400600
+Res ptr: 0x7fb8af400a00
+EVAL: A.copy() [Identity]
+EVAL: B_grad [BwdDiv]
+BEFORE BWD_DIV KERNEL
+A ptr: 0x7fb8af401000, B ptr: 0x7fb8af400600, prev_grad ptr: 0x7fb8af400c00
+Res ptr: 0x7fb8af400800
+============================================================
+BOBR Gradient Correctness Tests
+============================================================
+
+-- Forward sanity checks --
+  PASS  forward_exp
+  PASS  forward_log
+  PASS  forward_matmul
+  PASS  forward_sub
+
+-- Unary op gradients --
+  PASS  neg_grad
+  PASS  relu_grad
+  PASS  exp_grad
+  PASS  log_grad
+
+-- Binary op gradients --
+is_grad_buffer: False
+is_grad_node: False
+is_grad_buffer: False
+is_grad_node: False
+  PASS  add_grad
+is_grad_buffer: False
+is_grad_node: False
+is_grad_buffer: False
+is_grad_node: False
+  PASS  sub_grad [BUG EXPECTED]
+is_grad_buffer: False
+is_grad_node: False
+is_grad_buffer: False
+is_grad_node: False
+  PASS  mul_grad
+DATA BEFORE EVAL:
+[[0.9880996  1.6197371  1.4744494  1.7738351 ]
+ [1.4864193  1.3524629  0.64051217 1.0515738 ]
+ [0.89780354 0.86598444 1.9595158  1.0896466 ]]
+[[1.8380698  1.446708   1.692217   1.2539556 ]
+ [1.3653558  1.2387766  0.7928645  1.5836781 ]
+ [0.92115855 0.53647393 1.4682084  0.765666  ]]
+is_grad_buffer: False
+is_grad_node: False
+is_grad_buffer: False
+is_grad_node: False
+DATA AFTER EVAL:
+[[0.9880996  1.6197371  1.4744494  1.7738351 ]
+ [1.4864193  1.3524629  0.64051217 1.0515738 ]
+ [0.89780354 0.86598444 1.9595158  1.0896466 ]]
+[[1.8380698  1.446708   1.692217   1.2539556 ]
+ [1.3653558  1.2387766  0.7928645  1.5836781 ]
+ [0.92115855 0.53647393 1.4682084  0.765666  ]]
+    [debug] div grad_a bobr=[-1.0580654e+00 -3.0089352e+00 -9.0901977e-01 -1.8586898e+00
+ -5.6051939e-45  1.2440255e+00 -9.5066853e-02 -2.9317468e-01
+ -6.2338740e-01  1.0901639e+00  1.3454067e+00 -2.1884052e-01], 
+	torch=[0.54404896 0.6912245  0.5909408  0.7974764  0.7324098  0.80724806
+ 1.2612495  0.6314414  1.0855894  1.8640234  0.6811022  1.3060524 ]
+    [debug] div grad_b bobr=[-0.31749898 -1.4425609  -0.3506954  -1.4733623  -0.43379807 -0.6091981
+ -0.60210663 -0.33436728 -0.7749375  -2.4289572  -1.1465007  -1.1736537 ], 
+	torch=[-0.2924669  -0.77389634 -0.51489395 -1.1281034  -0.7973512  -0.8813317
+ -1.018895   -0.4192817  -1.0580654  -3.0089355  -0.90901977 -1.8586899 ]
+  FAIL  div_grad: grad_a: max_abs_diff=3.700160e+00 at (np.int64(0), np.int64(1)), max_rel_diff=5.353051e+00, got=-3.008935, expected=0.691225
+
+============================================================
+Results: 11 passed, 1 failed out of 12
+
+Failed tests:
+  div_grad: grad_a: max_abs_diff=3.700160e+00 at (np.int64(0), np.int64(1)), max_rel_diff=5.353051e+00, got=-3.008935, expected=0.691225
+============================================================
