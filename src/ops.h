@@ -37,6 +37,7 @@ std::shared_ptr<Node> max(std::shared_ptr<Node> a, int dim, bool keepdims);
 // tools 
 std::shared_ptr<Node> contiguous(std::shared_ptr<Node> a);
 std::shared_ptr<Node> reshape(std::shared_ptr<Node> a, int* shape, int ndim);
+std::shared_ptr<Node> transpose(std::shared_ptr<Node> a);
 std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> a, int* out_shape, int out_ndim);
 std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> a, std::vector<int> out_shape);
 
@@ -60,10 +61,15 @@ std::shared_ptr<Node> kaiming_normal(std::vector<int> shape);
 // layers 
 std::shared_ptr<Node> linear(std::shared_ptr<Node> a, int out_dim);
 
+// activations
+std::shared_ptr<Node> softmax(std::shared_ptr<Node> logits);
+
 // loss
 std::shared_ptr<Node> cross_entropy(std::shared_ptr<Node> logits, std::shared_ptr<Node> targets);
+std::shared_ptr<Node> cross_entropy_softmax(std::shared_ptr<Node> probs, std::shared_ptr<Node> targets);
 
-
+// idk 
+void sgd(std::vector<std::shared_ptr<Node>> params, float learning_rate);
 
 
 

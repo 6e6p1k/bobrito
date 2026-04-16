@@ -6,6 +6,7 @@ struct Graph {
     std::vector<Node*> fwd_order;
     std::vector<Node*> bwd_order;
     std::vector<Node*> require_grad_nodes;
+    std::vector<Node*> intermediates;
 
     bool disposable = true;
     std::vector<Node*> bwd_nodes;
@@ -17,6 +18,9 @@ struct Graph {
     void sgd_step(float lr);
     void detach_grads_from_bwd_graph();
     void clean_fwd_grad_buffers();
+    void fwd_bwd_pass();
+    void collect_intermidiate_nodes();
+    void zero_nodes_data();
 
     private:
     // CHECKS

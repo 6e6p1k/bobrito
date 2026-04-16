@@ -33,6 +33,13 @@ py::array_t<int> meta_to_pyarray(int* h_data, int size) {
     return py_meta;
 }
 
+std::shared_ptr<Node> _make_leaf_node_from_h_data(float* h_data, vector<int> shape) {
+    auto node = make_node(&prim_leaf, {}, shape.data(), shape.size());
+    node->d_data->allocate(node->get_size());
+    node->d_data->h_to_d(h_data, node->get_size());
+    return node;
+}
+
 void steal_data(shared_ptr<Node>& thief, py::object victim) {
     std::vector<int> shape;
     float* data_ptr = nullptr;
@@ -63,13 +70,9 @@ void steal_data(shared_ptr<Node>& thief, py::object victim) {
     if (!ndim_match || !size_match) 
         throw logic_error("Metadata doesn't match.");
 
-    // check thief's ContentData
-    if (!thief->is_data()) {
-        thief->d_data = make_shared<ContentData>();
-        thief->d_data->allocate(size);
-    } else if (!thief->is_data_allocated()) {
-        thief->d_data->allocate(size);
-    } 
+    // reset thief's ContentData
+    thief->d_data = make_shared<ContentData>();
+    thief->d_data->allocate(size);
 
     if (on_gpu) {
         thief->d_data->d_to_d(data_ptr, size);
@@ -89,52 +92,6 @@ PYBIND11_MODULE(bobr, m) {
     
     // Node wrapper
     py::class_<Node, shared_ptr<Node>>(m, "Node")
-        .def(py::init([](py::object obj, bool requires_grad) 
-        {
-            // Extract shape and data from whatever we got
-            std::vector<int> shape;
-            float* data_ptr = nullptr;
-            int size = 1;
-            bool on_gpu = false;
-
-            // Check __cuda_array_interface__ first (PyTorch CUDA, CuPy)
-            if (py::hasattr(obj, "__cuda_array_interface__")) {
-                py::dict iface = obj.attr("__cuda_array_interface__").cast<py::dict>();
-                py::tuple shape_tuple = iface["shape"].cast<py::tuple>();
-                for (auto s : shape_tuple) shape.push_back(s.cast<int>());
-                py::tuple data_tuple = iface["data"].cast<py::tuple>();
-                data_ptr = reinterpret_cast<float*>(data_tuple[0].cast<uintptr_t>());
-                on_gpu = true;
-            }
-            // Then buffer protocol (numpy, array.array)
-            else if (py::isinstance<py::buffer>(obj)) {
-                py::buffer_info info = py::buffer(obj).request();
-                for (auto s : info.shape) shape.push_back(s);
-                data_ptr = static_cast<float*>(info.ptr);
-            }
-            else {
-                throw std::runtime_error("Expected numpy array, torch tensor, or cuda array");
-            }
-
-            shared_ptr<Node> node = make_shared<Node>();
-            node->requires_grad = requires_grad;
-            node->h_meta = make_shape_data(shape.size(), shape.data());
-            node->prim = &prim_leaf;
-            node->d_data = make_shared<ContentData>();
-            node->d_data->allocate(node->get_size());
-
-            if (on_gpu) {
-                for (int s : shape) size *= s;
-                cudaMemcpy(node->d_data->data(), data_ptr,
-                        size * sizeof(float), cudaMemcpyDeviceToDevice);
-            } else {
-                for (int s : shape) size *= s;
-                node->d_data->h_to_d(data_ptr, size);
-            }
-
-            return node;
-        }), py::arg("data"), py::arg("requires_grad") = false)
-
         .def_property_readonly("data", [](const shared_ptr<Node>& n) {
             if (!n->is_data_allocated()) throw logic_error("Data not allocated!");
             return data_to_pyarray(n->d_data->d_to_h(), n->get_shape(), n->get_ndim());
@@ -155,7 +112,8 @@ PYBIND11_MODULE(bobr, m) {
         })
         .def_property_readonly("size", &Node::get_size)
         .def_property_readonly("ndim", &Node::get_ndim)
-        .def_property_readonly("requires_grad", [](const shared_ptr<Node>& n) { return n->requires_grad; })
+        .def_property("requires_grad", [](const shared_ptr<Node>& n) { return n->requires_grad; },
+                                    [](shared_ptr<Node>& n, bool requires_grad) { n->requires_grad = requires_grad; })
 
         .def_property("label", [](const shared_ptr<Node>& n) { return n->label; },
                              [](shared_ptr<Node>& n, const string& new_label) { n->set_label(new_label); })
@@ -174,6 +132,23 @@ PYBIND11_MODULE(bobr, m) {
         .def("eval", [](shared_ptr<Node>& n) { eval(n); })
         .def("steal_data", py::overload_cast<shared_ptr<Node>&, shared_ptr<Node>>(&steal_data))
         .def("steal_data", py::overload_cast<shared_ptr<Node>&, py::object>(&steal_data))
+        .def("data_from_numpy", [](shared_ptr<Node>& n, py::array_t<float, py::array::c_style | py::array::forcecast> arr) {
+            py::buffer_info info = arr.request();
+            std::vector<int> shape(info.shape.begin(), info.shape.end());
+            float* h_data = static_cast<float*>(info.ptr);
+            
+            if (n->get_ndim() != shape.size()) throw std::logic_error("Shapes should be the same.");
+            for (int i = 0; i < n->get_ndim(); ++i)
+                if (n->get_shape()[i] != shape[i])
+                    throw std::logic_error("Shapes should be the same.");
+            
+            if (!n->is_data())
+                n->d_data = make_shared<ContentData>();
+            if (!n->is_data_allocated())
+                n->d_data->allocate(n->get_size());
+            n->d_data->h_to_d(h_data, n->get_size());
+            cudaDeviceSynchronize();
+        })
         .def("set_label", &Node::set_label)
         .def("get_owned_grad_ptr", [](shared_ptr<Node>& n) { return n->owned_grad->d_data->data(); })
         .def("__repr__", [](const shared_ptr<Node>& n) {
@@ -214,20 +189,26 @@ PYBIND11_MODULE(bobr, m) {
         .def_property_readonly("weights", [](shared_ptr<Graph>& g) { 
             py::list py_lst(g->require_grad_nodes.size());
             for (auto node : g->require_grad_nodes) {
-                py_lst.append(make_node_string(node));
+                DEBUG(node, "");
             }
             return py_lst;
         })
-        .def("eval", &Graph::eval)
+        .def("eval", &Graph::eval, py::arg("debug") = false)
         .def("build_backward", &Graph::backward)
+        .def("fwd_bwd_pass", &Graph::fwd_bwd_pass)
         .def("sgd_step", &Graph::sgd_step, py::arg("learning_rate"))
-        .def("detach_grads", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); });
+        .def("detach_grads", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); })
+        .def("clear_graph_data", &Graph::zero_nodes_data);
     
     
 
     // Creation ops
 
-
+    m.def("empty", [](vector<int> shape) { 
+        auto node = make_node(&prim_leaf, {}, shape.data(), shape.size()); 
+        node->d_data->allocate(node->get_size());
+        return node;
+    }, py::arg("shape"));
     m.def("full", [](vector<int> shape, float value) { return full(shape, value); });
     m.def("arange", [](int start, int end, int step = 1) { return arange(start, end, step); },
           py::arg("start"), py::arg("end"), py::arg("step") = 1);
@@ -273,14 +254,20 @@ PYBIND11_MODULE(bobr, m) {
     // Layer ops
     m.def("linear", &linear);
     
+    // Activation ops
+    m.def("softmax", &softmax);
+
     // Loss ops
     m.def("cross_entropy", &cross_entropy);
+    m.def("cross_entropy_softmax", &cross_entropy_softmax);
     
     // Training helpers
     m.def("eval", [](shared_ptr<Node> node, bool export_graph) { eval(node, export_graph); },
           py::arg("node"), py::arg("export_graph") = false);
     m.def("debug_eval", [](shared_ptr<Node> node, bool export_graph, bool disposable) { debug_eval(node, export_graph, disposable); },
           py::arg("node"), py::arg("export_graph") = false, py::arg("disposable") = true);
+    m.def("sgd", &sgd, py::arg("params"), py::arg("learning_rate"));
+
     m.def("make_model", &make_model);
 
     m.def("sync", []() { CUDA_CHECK(); });
@@ -293,5 +280,14 @@ PYBIND11_MODULE(bobr, m) {
         print_allocated_blocks();
     });
     m.def("export_graph", [](shared_ptr<Node> node) { node->export_graph(); });
+    m.def("from_numpy", [](py::array_t<float, py::array::c_style | py::array::forcecast> arr, bool requires_grad) {
+        py::buffer_info info = arr.request();
+        std::vector<int> shape(info.shape.begin(), info.shape.end());
+        float* h_data = static_cast<float*>(info.ptr);
+        auto node = _make_leaf_node_from_h_data((float*)h_data, shape);
+        node->requires_grad = requires_grad;
+        cudaDeviceSynchronize();
+        return node;
+    }, py::arg("arr"), py::arg("requires_grad") = false);
 }
 

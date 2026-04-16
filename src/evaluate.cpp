@@ -180,6 +180,8 @@ Graph::Graph(shared_ptr<Node> loss, bool disposable) {
     compute_fwd_order();
     locate_leaf_w_grad_nodes();
     this->disposable = disposable;
+    if (!disposable) collect_intermidiate_nodes();
+
 }
 
 void Graph::backward() {
@@ -209,6 +211,11 @@ void Graph::eval(bool debug) {
         detach_grads_from_bwd_graph();
         clean_fwd_grad_buffers();
     }
+}
+
+void Graph::fwd_bwd_pass() {
+    fwd_pass();
+    bwd_pass();
 }
 
 // CHECKS
@@ -257,6 +264,23 @@ void Graph::pass(vector<Node*> order) {
         if (!node || !node->prim || !node->is_meta()) continue;
         node->prim->allocate(node);
         node->prim->eval(node);
+        if (!node->requires_grad) intermediates.push_back(node);
+    }
+}
+
+void Graph::collect_intermidiate_nodes() {
+    for (Node* node : bwd_order) {
+        if (!node->requires_grad) intermediates.push_back(node);
+    }
+    for (Node* node : fwd_order) {
+        if (!node->requires_grad) intermediates.push_back(node);
+    }
+}
+
+void Graph::zero_nodes_data() {
+    for (Node* node : intermediates) {
+        if (!node || !node->is_data()) continue;
+        node->d_data = nullptr;           
     }
 }
 
@@ -331,11 +355,7 @@ void Graph::debug_pass(vector<Node*> order) {
 }
 
 void Graph::fwd_pass() { pass(fwd_order); }
-void Graph::bwd_pass() { 
-    pass(bwd_order); 
-    // cout << "\nIMMEDIATELY AFTER BWD PASS: \n";
-    // print_allocated_blocks();
-}
+void Graph::bwd_pass() { pass(bwd_order); }
 
 void Graph::_backward() {
     if (root->requires_grad || root->inputs.size() == 0)

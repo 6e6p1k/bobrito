@@ -277,43 +277,43 @@ void test_div_grad_only() {
 // ============================================================
 int main() {
     cudaError_t err;
-    // cout << "=== Test 1: div_grad ALONE ===\n";
+    cout << "=== Test 1: div_grad ALONE ===\n";
     // Run div in isolation first
-    // {
-    //     auto a = make_leaf({3, 4}, div_a_data, "div_A", true);
-    //     auto b = make_leaf({3, 4}, div_b_data, "div_B", true);
-    //     auto quotient = div(a, b);
-    //     auto loss = sum(quotient, 0, false);
-    //     eval(loss);
-    //     cudaDeviceSynchronize();
+    {
+        auto a = make_leaf({3, 4}, div_a_data, "div_A", true);
+        auto b = make_leaf({3, 4}, div_b_data, "div_B", true);
+        auto quotient = div(a, b);
+        auto loss = sum(quotient, 0, false);
+        eval(loss);
+        cudaDeviceSynchronize();
 
-    //     float* ga = get_grad(a);
-    //     float* gb = get_grad(b);
-    //     auto expected_ga = compute_div_grad_a(div_a_data, div_b_data);
-    //     auto expected_gb = compute_div_grad_b(div_a_data, div_b_data);
+        float* ga = get_grad(a);
+        float* gb = get_grad(b);
+        auto expected_ga = compute_div_grad_a(div_a_data, div_b_data);
+        auto expected_gb = compute_div_grad_b(div_a_data, div_b_data);
 
-    //     print_array("  grad_a (bobr)    ", ga, 12);
-    //     print_array("  grad_a (expected)", expected_ga.data(), 12);
-    //     print_array("  grad_b (bobr)    ", gb, 12);
-    //     print_array("  grad_b (expected)", expected_gb.data(), 12);
+        print_array("  grad_a (bobr)    ", ga, 12);
+        print_array("  grad_a (expected)", expected_ga.data(), 12);
+        print_array("  grad_b (bobr)    ", gb, 12);
+        print_array("  grad_b (expected)", expected_gb.data(), 12);
 
-    //     try {
-    //         check_close("div_alone grad_a", ga, expected_ga.data(), 12);
-    //         check_close("div_alone grad_b", gb, expected_gb.data(), 12);
-    //         cout << "[PASS] div_grad alone\n";
-    //     } catch (const exception& e) {
-    //         cout << "[FAIL] div_grad alone: " << e.what() << "\n";
-    //     }
-    //     free(ga);
-    //     free(gb);
-    // }
-    // print_snapshot("after isolated div", snapshot());
+        try {
+            check_close("div_alone grad_a", ga, expected_ga.data(), 12);
+            check_close("div_alone grad_b", gb, expected_gb.data(), 12);
+            cout << "[PASS] div_grad alone\n";
+        } catch (const exception& e) {
+            cout << "[FAIL] div_grad alone: " << e.what() << "\n";
+        }
+        free(ga);
+        free(gb);
+    }
+    print_snapshot("after isolated div", snapshot());
 
     cout << "\n=== Test 2: mul_grad then div_grad ===\n";
-    // err = cudaDeviceSynchronize();
-    // if (err != cudaSuccess) {
-    //     cerr << "Error occurred during mul_grad test: " << cudaGetErrorString(err) << "\n";
-    // } else cout << "CUDA synchronized successfully.\n";
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        cerr << "Error occurred during mul_grad test: " << cudaGetErrorString(err) << "\n";
+    } else cout << "CUDA synchronized successfully.\n";
     RUN(test_mul_grad);
 
     CUDA_CHECK();

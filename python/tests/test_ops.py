@@ -1,21 +1,16 @@
-import torch
+import sys
+sys.path.insert(0, 'python')
+import numpy as np
 import bobr
 
-SHAPE = [32, 64, 16]
-a = torch.rand(SHAPE)
-b = torch.rand(SHAPE)
+shape = [4, 3]
 
-def compute_elemwise_torch(a, b, f):
-    return f(a, b)
+a = np.random.rand(*shape)
+a_b = bobr.empty(shape)
+a_b.data_from_numpy(a)
+# a_b = bobr.Node(a)
 
-def compute_elemwise_bobr(a, b, f):
-    _a = bobr.Node(a.numpy())
-    _b = bobr.Node(b.numpy())
-    c =  f(_a, _b)
-    c.eval()
-    return c
+print(a)
+print(a_b.data)
 
-c_torch = compute_elemwise_torch(a, b, torch.add)
-c_bobr = compute_elemwise_bobr(a, b, bobr.add)
-
-print((c_torch.data == c_bobr.data).all())
+assert np.allclose(a, np.array(a_b.data))

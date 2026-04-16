@@ -52,3 +52,4 @@ std::pair<int*, int> reduction(std::shared_ptr<Node> A, const int dim, const boo
 std::pair<int*, int> matmul(int* a_shape, int* b_shape, int a_ndim, int b_ndim);
 std::pair<int*, int> matmul(std::shared_ptr<Node> A, std::shared_ptr<Node> B);
 }
+

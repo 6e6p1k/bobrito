@@ -30,7 +30,7 @@ def make_bobr_leaf(data_np, requires_grad=True):
 def bobr_eval_and_get_grad(loss_node, leaf_nodes):
     """Evaluate forward+backward and return gradients as numpy arrays."""
     # loss_node.eval()
-    bobr.eval(loss_node)
+    bobr.eval(loss_node, True, False)
     bobr.sync()
     grads = []
     for leaf in leaf_nodes:

@@ -41,6 +41,27 @@ __global__ void contiguous(float* src, float* dst, int size, ContiguousInfo info
     dst[out_idx] = src[src_idx];
 }
 
+__global__ void transpose(float* src, float* dst, int m, int n, int size)
+{
+    // Transpose a [m, n] matrix to [n, m]
+    // src is laid out as [m, n]: element [i, j] is at src[i * n + j]
+    // dst should be laid out as [n, m]: element [j, i] should be at dst[j * m + i]
+    
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+    
+    // Convert flat index to [m, n] coordinates
+    int i = idx / n;  // row in source (m dimension)
+    int j = idx % n;  // col in source (n dimension)
+    
+    // In destination [n, m], element [j, i] is at position j * m + i
+    int dst_idx = j * m + i;
+    
+    dst[dst_idx] = src[idx];
+}
+
+
+
 __global__ void reduction_offsets(int* offsets, int last_dim, int num_segments) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i <= num_segments) offsets[i] = i * last_dim;
@@ -71,7 +92,7 @@ __global__ void pow(float* in, float* exponent, float* out, int n) {
 
 __global__ void sgd(float* weight_data, float* grad_data, float lr, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) weight_data[i] -= grad_data[i] * lr;
+    if (i < n) weight_data[i] = weight_data[i] - grad_data[i] * lr;
 }
 
 __global__ void scale(float* data, float limit, int n) {

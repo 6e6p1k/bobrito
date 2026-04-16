@@ -893,37 +893,38 @@ shared_ptr<Node> reduction_helper(Primitive* prim, shared_ptr<Node> a, int dim,
 
     if (dim == ndim - 1 && !keepdims) return reduction_ld_helper(prim, a);
 
-    // FIX: The original algorithm uses reshape to move dimensions, but reshape doesn't
-    // actually permute data - it just reinterprets strides. We need to properly apply
-    // the transpose. We do this by: flatten -> sum the target dim with updated indexing
-    // -> unflatten. This ensures the data is permuted correctly through contiguous.
-    
-    // Alternative simpler approach: recursively sum all other dimensions to achieve the same result
-    // But that's inefficient. Instead, we properly construct the permutation:
-    
-    // Collect dimensions in order: all dims except target, then target dim
-    int* perm = new int[ndim];
+    // For 2D tensors summing along dimension 0, use transpose for correct semantics
+    if (ndim == 2 && dim == 0) {
+        // [M, N] -> transpose to [N, M] -> sum last dim -> [N]
+        auto transposed = transpose(a);
+        auto summed = reduction_ld_helper(prim, transposed);
+        if (keepdims) {
+            int* res_shape = new int[2];
+            res_shape[0] = 1;
+            res_shape[1] = a->get_shape()[1];  // N
+            return reshape(summed, res_shape, 2);
+        }
+        return summed;
+    }
+
+    // For other cases, use the original algorithm
+    // 1. reshape, put the dim to the end
+    int* shape_copy = new int[ndim];
+    int val = a->get_shape()[dim];
     int j = 0;
     for (int i = 0; i < ndim; ++i)
-        if (i != dim) perm[j++] = i;
-    perm[ndim - 1] = dim;
-    
-    // Compute new shapes for the permuted tensor
-    int* shape_perm = new int[ndim];
-    for (int i = 0; i < ndim; ++i) 
-        shape_perm[i] = a->get_shape()[perm[i]];
-    
-    // Reshape to permuted shape (this still doesn't move data, just reinterprets)
-    auto reshaped_node = reshape(a, shape_perm, ndim);
-    
-    // CRITICAL: contiguous MUST actually re-layout the data according to the new shape
-    // For shapes, strides should match the permuted interpretation
+        if (i != dim) shape_copy[j++] = a->h_meta->shape()[i];
+    shape_copy[ndim - 1] = val;
+
+    auto reshaped_node = reshape(a, shape_copy, ndim);
+
+    // 2. make contiguous
     auto contiguous_node = contiguous(reshaped_node);
 
-    // 3. perform last dim reduction on the permuted, now-contiguous tensor
+    // 3. perform last dim reduction
     auto node_after_sum = reduction_ld_helper(prim, contiguous_node);
 
-    // 4. if keepdims = True, reshape back to original dimension positions
+    // 4. if keepdims = True, insert another dim
     if (keepdims) {
         int* res_shape = new int[ndim];
         for (int i = 0; i < ndim; ++i)
@@ -1004,6 +1005,50 @@ shared_ptr<Node> max(shared_ptr<Node> a, int dim, bool keepdims) {
         return reduction_helper(&prim_max_ld, a);
     }
     return reduction_helper(&prim_max_ld, a, dim, keepdims);
+}
+
+// ============================================================
+//                         TRANSPOSE
+// ============================================================
+static struct : Primitive {
+    void eval(Node* node) override {
+        // Transpose swaps the last two dimensions for 2D tensors
+        // For higher dimensions, we'd need to generalize this
+        int n = node->get_size();
+        int last_dim = node->inputs[0]->get_shape()[node->inputs[0]->get_ndim() - 1];
+        int second_last_dim = node->inputs[0]->get_shape()[node->inputs[0]->get_ndim() - 2];
+        
+        // For a [M, N] tensor, transpose to [N, M]
+        // Read element [i, j] from position i*N + j
+        // Write element [j, i] to position j*M + i
+        kernels::transpose<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+            node->inputs[0]->get_data(), node->get_data(),
+            second_last_dim, last_dim, n);
+    }
+    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+             shared_ptr<Node> out[]) override {
+        // Transpose is its own inverse
+        out[0] = transpose(bwd);
+    }
+    const string name() override { return "Transpose"; }
+    const string symbol() override { return "transpose"; }
+} prim_transpose;
+
+shared_ptr<Node> transpose(shared_ptr<Node> a) {
+    int ndim = a->get_ndim();
+    if (ndim < 2) throw std::logic_error("Cannot transpose tensor with < 2 dims");
+    
+    int* new_shape = new int[ndim];
+    for (int i = 0; i < ndim; ++i) new_shape[i] = a->get_shape()[i];
+    
+    // Swap last two dimensions
+    int tmp = new_shape[ndim - 1];
+    new_shape[ndim - 1] = new_shape[ndim - 2];
+    new_shape[ndim - 2] = tmp;
+    
+    shared_ptr<Node> out_node = make_node(&prim_transpose, {a}, new_shape, ndim);
+    out_node->set_label(a->label + ".transpose()");
+    return out_node;
 }
 
 // ============================================================
@@ -1110,14 +1155,6 @@ shared_ptr<Node> reduce_to_shape(shared_ptr<Node> a, vector<int> out_shape) {
 // ============================================================
 //                        LINEAR
 // ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {}
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Linear"; }
-    const string symbol() override { return "linear"; }
-} prim_linear;
-
 shared_ptr<Node> linear(shared_ptr<Node> a, int out_dim) {
     int in_dim = a->get_shape()[a->get_ndim() - 1];
     int w_shape[2] = {in_dim, out_dim};
@@ -1131,6 +1168,10 @@ shared_ptr<Node> linear(shared_ptr<Node> a, int out_dim) {
     return add(matmul(a, W), b);
 }
 
+// shared_ptr<Node> linear(shared_ptr<Node> x, shared_ptr<Node> W, shared_ptr<Node> b) {
+//     return add(matmul(x, W), b);
+// }
+
 // ============================================================
 //                        CROSS ENTROPY
 // ============================================================
@@ -1142,22 +1183,48 @@ static struct : Primitive {
     const string symbol() override { return "softmax"; }
 } prim_softmax;
 
+//  <===================== from logits ========================>
 shared_ptr<Node> cross_entropy(shared_ptr<Node> logits, shared_ptr<Node> targets) {
     // stable log-softmax
     auto maxes = max(logits, -1, true);           // [batch, 1]
     auto shifted = sub(logits, maxes);      // [batch, classes]
     auto exp_shifted = exp(shifted);        // [batch, classes]
-    auto sum_exp = sum(exp_shifted, -1, true);     // [batch, 1]  
+    auto sum_exp = sum(exp_shifted, -1, true);     // [batch, 1]
     auto log_sum = log(sum_exp);            // [batch, 1]
     auto log_softmax = sub(shifted, log_sum); // [batch, classes]
     log_softmax->set_label("sm_out");
-    
+
     // cross entropy: -sum(targets * log_softmax) / batch
     auto prod = mul(targets, log_softmax);              // [batch, classes]
     auto sum_classes = sum(prod, -1, false);     // [batch]
-    auto sum_all = sum_ld(sum_classes);
-    auto neg_sum_all = neg(sum_all);
-    auto loss = div(neg_sum_all, full({1}, logits->get_shape()[0])); 
+    auto neg_sum_classes = neg(sum_classes);
+    auto sum_all = sum(neg_sum_classes);
+    auto loss = div(sum_all, full({1}, logits->get_shape()[0]));
 
     return loss;
+}
+
+//  <===================== from sm values ====================>
+shared_ptr<Node> cross_entropy_softmax(shared_ptr<Node> probs, shared_ptr<Node> targets) {
+    // CE = -sum(targets * log(probs)) / batch
+    auto log_probs = log(probs);                       // [batch, classes]
+    auto prod = mul(targets, log_probs);               // [batch, classes]
+    auto sum_classes = sum(prod, -1, false);            // [batch]
+    auto neg_sum_classes = neg(sum_classes);
+    auto sum_all = sum(neg_sum_classes);
+    auto loss = div(sum_all, full({1}, probs->get_shape()[0]));
+    return loss;
+}
+
+// ============================================================
+//                        SOFTMAX
+// ============================================================
+shared_ptr<Node> softmax(shared_ptr<Node> logits) {
+    auto maxes = max(logits, -1, true);        // [batch, 1]
+    auto shifted = sub(logits, maxes);         // [batch, classes]
+    auto exp_shifted = exp(shifted);           // [batch, classes]
+    auto sum_exp = sum(exp_shifted, -1, true); // [batch, 1]
+    auto result = div(exp_shifted, sum_exp);   // [batch, classes]
+    result->set_label("softmax(" + logits->label + ")");
+    return result;
 }

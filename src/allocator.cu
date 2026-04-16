@@ -10,7 +10,16 @@
 #include <iomanip>
 
 #include "allocator.cuh"
-#include "allocator.cuh"
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 
 // <Block struct>
 OutStatus Block::allocate_block(void)
@@ -316,19 +325,19 @@ float* ContentData::d_to_h()
 {
     check();
     float* dst = (float*)malloc(_size * sizeof(float));
-    cudaDeviceSynchronize();
-    cudaMemcpy(dst, b_ptr->d_ptr, _size * sizeof(float), cudaMemcpyDeviceToHost);
+    gpuErrchk( cudaMemcpy(dst, b_ptr->d_ptr, _size * sizeof(float), cudaMemcpyDeviceToHost) );
     return dst;
 }
 
 void ContentData::h_to_d(float* h_data, int size)
 {
+    check();
     size_t bytes = size * sizeof(float);
     if (!b_ptr)
     {
         MemoryPool::call().allocate(&b_ptr, bytes);
     }
-    cudaMemcpy(b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice);
+    gpuErrchk( cudaMemcpy(b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice) );
 }
 
 void ContentData::d_to_d(float* d_data, int size)
@@ -338,7 +347,7 @@ void ContentData::d_to_d(float* d_data, int size)
     {
         MemoryPool::call().allocate(&b_ptr, bytes);
     }
-    cudaMemcpy(b_ptr->d_ptr, d_data, bytes, cudaMemcpyDeviceToDevice);
+    gpuErrchk( cudaMemcpy(b_ptr->d_ptr, d_data, bytes, cudaMemcpyDeviceToDevice) );
 }
 
 void ContentData::check(void)

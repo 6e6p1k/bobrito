@@ -1,0 +1,9 @@
+Loading MNIST dataset...
+✓ Loaded MNIST training data: (60000, 784), labels: (60000, 10)
+✓ Loaded MNIST test data: (10000, 784), labels: (10000, 10)
+Epoch  1/5 | Accuracy = 9.9505% | Loss: 0.827207656692897
+Epoch  2/5 | Accuracy = 9.8635% | Loss: 0.816504305767043
+Epoch  3/5 | Accuracy = 9.4971% | Loss: 0.8128444372458938
+Epoch  4/5 | Accuracy = 9.1927% | Loss: 0.8110266538452541
+Epoch  5/5 | Accuracy = 9.0705% | Loss: 0.8099069725522647
+Graph was successfully exported to file 'graph.pdf'
