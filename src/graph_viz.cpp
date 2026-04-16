@@ -104,18 +104,6 @@ static void dot_emit_node_label(ofstream& out, Node* node) {
         data_ptr_row = make_row("Data ptr: ", ptr_str(node->get_data()), "#00ffee");
     else data_ptr_row = "";
 
-    string is_grad_buffer_row;
-    string is_grad_buffer_ptr_row;
-    if (node->is_grad_buffer()) {
-        is_grad_buffer_row = make_row("Grad buffer ptr: ", ptr_str(node->grad_buffer.get()), "#00ffee");
-        if (node->grad_buffer->is_data_allocated()) {
-            is_grad_buffer_ptr_row = make_row("Grad buffer data ptr: ", ptr_str(node->grad_buffer->get_data()), "#00ffee");
-        } else is_grad_buffer_ptr_row = make_row("Grad buffer data: ", "not allocated", "#ff5e5e");
-    } else {
-        is_grad_buffer_row = "";
-        is_grad_buffer_ptr_row = "";
-    }
-
     string is_owned_grad_row;
     string is_owned_grad_ptr_row;
     if (node->owned_grad) {
@@ -141,8 +129,6 @@ static void dot_emit_node_label(ofstream& out, Node* node) {
         << transposed_row
         << node_ptr
         << data_ptr_row
-        << is_grad_buffer_row
-        << is_grad_buffer_ptr_row
         << is_owned_grad_row
         << is_owned_grad_ptr_row;
     

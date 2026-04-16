@@ -34,7 +34,6 @@ def bobr_eval_and_get_grad(loss_node, leaf_nodes):
     bobr.sync()
     grads = []
     for leaf in leaf_nodes:
-        # print(f"    [debug] leaf '{leaf.label}' is_grad_buffer={leaf.is_grad_buffer}, is_grad_node={leaf.is_grad_node}")
         grads.append(np.array(leaf.grad))
     return grads
 

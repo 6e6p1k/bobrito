@@ -22,10 +22,6 @@ bool Node::is_data_allocated() {
 
 bool Node::is_meta() { return h_meta != nullptr; }
 
-bool Node::is_grad_buffer() { return grad_buffer != nullptr; }
-
-bool Node::is_grad_node() { return grad_node.lock() != nullptr; }
-
 int Node::get_size() {
     if (!is_meta()) throw logic_error("h_meta is nullptr!");
     if (h_meta->size == -1) throw logic_error("size wasn't defined!");

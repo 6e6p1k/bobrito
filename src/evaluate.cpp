@@ -19,7 +19,8 @@ using namespace std;
 //                       BACKWARD HELPER
 // ============================================================
 void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
-                    unordered_map<Node*, int>& remaining);
+                    unordered_map<Node*, int>& remaining,
+                    unordered_map<Node*, shared_ptr<Node>>& grad_accum);
 
 // Count how many times each node is consumed as an input.
 // Indicates that all upstream grads have arrived.
@@ -37,17 +38,20 @@ void count_uses(shared_ptr<Node> node, unordered_map<Node*, int>& uses,
 
 // Accumulate gradient for a node. When all upstream grads
 // have arrived, recurse into that node's vjp.
+// grad_accum: temporary map holding partial gradient sums
+//             for multi-consumer nodes (replaces the old grad_buffer field).
 void set_grad_and_traverse(shared_ptr<Node> fwd_node, shared_ptr<Node> new_grad,
-                           unordered_map<Node*, int>& remaining) {
+                           unordered_map<Node*, int>& remaining,
+                           unordered_map<Node*, shared_ptr<Node>>& grad_accum) {
     // accumulate
     shared_ptr<Node> final_grad;
-    if (fwd_node->grad_buffer) {
-        fwd_node->grad_buffer->set_label(fwd_node->label + "_partial_grad");
-        final_grad = add(fwd_node->grad_buffer, new_grad);
+    auto it = grad_accum.find(fwd_node.get());
+    if (it != grad_accum.end()) {
+        it->second->set_label(fwd_node->label + "_partial_grad");
+        final_grad = add(it->second, new_grad);
     } else
         final_grad = new_grad;
     final_grad->set_label(fwd_node->label + "_grad");
-    // final_grad->d_data = make_shared<ContentData>();
 
     remaining[fwd_node.get()]--;
 
@@ -59,27 +63,26 @@ void set_grad_and_traverse(shared_ptr<Node> fwd_node, shared_ptr<Node> new_grad,
 
     // not all upstream grads arrived yet — stash and wait
     if (remaining[fwd_node.get()] > 0) {
-        fwd_node->grad_buffer = final_grad;
+        grad_accum[fwd_node.get()] = final_grad;
         return;
     }
 
-    // all grads arrived — recurse
-    build_backward(fwd_node, final_grad, remaining);
-    fwd_node->grad_buffer = nullptr;
+    // all grads arrived — clean up accumulator and recurse
+    grad_accum.erase(fwd_node.get());
+    build_backward(fwd_node, final_grad, remaining, grad_accum);
 }
 
 // The core: ask the primitive for raw grads, reduce for
 // broadcasting, wire them up.
 void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
-                    unordered_map<Node*, int>& remaining) {
+                    unordered_map<Node*, int>& remaining,
+                    unordered_map<Node*, shared_ptr<Node>>& grad_accum) {
     if (fwd_node->inputs.size() <= 0 || fwd_node->requires_grad) return;
     if (!fwd_node->prim) return;
 
     // ask the op for raw gradients
     shared_ptr<Node> grads[4] = {};
     fwd_node->prim->vjp(fwd_node, bwd_node, grads);
-
-    // go through grads and remove leaf nodes in which requires_grad = false
 
     // wire up each input
     for (int i = 0; i < fwd_node->inputs.size(); i++) {
@@ -98,7 +101,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
         auto reduced =
             reduce_to_shape(grads[i], input->get_shape(), input->get_ndim());
 
-        set_grad_and_traverse(input, reduced, remaining);
+        set_grad_and_traverse(input, reduced, remaining, grad_accum);
     }
 
     // go through bwdnode-> outputs vector
@@ -106,7 +109,7 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
     auto& v = bwd_node->outputs;
     for (int i = v.size() - 1; i >= 0; --i) {
         if (v[i].expired()) {
-            v.erase(v.begin() + i); // Actually deletes it right now
+            v.erase(v.begin() + i);
         }
     }
 }
@@ -209,7 +212,6 @@ void Graph::eval(bool debug) {
     }
     if (disposable) {
         detach_grads_from_bwd_graph();
-        clean_fwd_grad_buffers();
     }
 }
 
@@ -372,7 +374,9 @@ void Graph::_backward() {
     unordered_set<Node*> visited;
     count_uses(root, uses, visited);
 
-    build_backward(root, seed, uses);
+    // temporary accumulator for multi-consumer gradient sums
+    unordered_map<Node*, shared_ptr<Node>> grad_accum;
+    build_backward(root, seed, uses, grad_accum);
 }
 
 bool check_node_before_detaching(shared_ptr<Node> node) {
@@ -401,14 +405,6 @@ void Graph::detach_grads_from_bwd_graph() {
     }
 }
 
-void Graph::clean_fwd_grad_buffers() {
-    for (auto node : fwd_order) {
-        if (node) { 
-            node->grad_buffer.reset();
-            node->grad_node.reset();
-        }
-    }
-}
 // ============================================================
 //                       PUBLIC API
 // ============================================================

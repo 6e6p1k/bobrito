@@ -88,15 +88,10 @@ struct Node {
     std::vector<std::weak_ptr<Node>> outputs;
     std::vector<std::shared_ptr<Node>> inputs;
 
-    std::shared_ptr<Node> grad_buffer;
     std::shared_ptr<Node> owned_grad;
-    std::weak_ptr<Node> grad_node;
-    std::weak_ptr<Node> source;
     bool requires_grad = false;
     bool is_bwd = false;
 
-    bool is_grad_buffer();
-    bool is_grad_node();
     bool is_label();
     bool is_meta();
     bool is_data();

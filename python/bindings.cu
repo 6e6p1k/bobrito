@@ -10,6 +10,7 @@
 #include "../src/ops.h"
 #include "../src/evaluate.h"
 #include "../src/utils.h"
+#include "../src/optim.h"
 #include "pybind11/detail/common.h"
 #include "pybind11/pytypes.h"
 
@@ -124,8 +125,6 @@ PYBIND11_MODULE(bobr, m) {
         .def_property_readonly("is_meta", &Node::is_meta)
         .def_property_readonly("is_data", &Node::is_data)
         .def_property_readonly("is_data_allocated", &Node::is_data_allocated)
-        .def_property_readonly("is_grad_buffer", &Node::is_grad_buffer)
-        .def_property_readonly("is_grad_node", &Node::is_grad_node)
         .def_property_readonly("is_owned_grad", [](const shared_ptr<Node>& n) { return n->owned_grad != nullptr && n->owned_grad->is_data_allocated(); })
         .def_property_readonly("data_ptr", [](const shared_ptr<Node>& n) { return n->get_data(); })
 
@@ -199,8 +198,24 @@ PYBIND11_MODULE(bobr, m) {
         .def("sgd_step", &Graph::sgd_step, py::arg("learning_rate"))
         .def("detach_grads", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); })
         .def("clear_graph_data", &Graph::zero_nodes_data);
-    
-    
+
+    // Module wrappers
+    py::class_<Module, shared_ptr<Module>>(m, "Module")
+        .def("forward", &Module::forward)
+        .def("parameters", &Module::parameters);
+
+    py::class_<LinearLayer, Module, shared_ptr<LinearLayer>>(m, "Linear")
+        .def(py::init<int, int>(), py::arg("in_dim"), py::arg("out_dim"))
+        .def("forward", &LinearLayer::forward)
+        .def("parameters", &LinearLayer::parameters)
+        .def_readonly("W", &LinearLayer::W)
+        .def_readonly("b", &LinearLayer::b);
+
+    py::class_<Sequential, Module, shared_ptr<Sequential>>(m, "Sequential")
+        .def(py::init<>())
+        .def("add", &Sequential::add_layer)
+        .def("forward", &Sequential::forward)
+        .def("parameters", &Sequential::parameters);
 
     // Creation ops
 

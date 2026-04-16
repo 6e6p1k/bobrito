@@ -27,12 +27,6 @@ torch.manual_seed(42)
 
 # ── Helpers ────────────────────────────────────────────────────
 
-def grad_buffer_node_info(nodes):
-    for node in nodes:
-        print(f"is_grad_buffer: {node.is_grad_buffer}")
-        print(f"is_grad_node: {node.is_grad_node}")
-
-
 def make_bobr_leaf(data_np, requires_grad=True):
     """Create a bobr leaf node from numpy data with requires_grad."""
     node = bobr.from_numpy(data_np, requires_grad)
@@ -45,7 +39,6 @@ def bobr_eval_and_get_grad(loss_node, leaf_nodes):
     # bobr.sync()
     grads = []
     for leaf in leaf_nodes:
-        # print(f"    [debug] leaf '{leaf.label}' is_grad_buffer={leaf.is_grad_buffer}, is_grad_node={leaf.is_grad_node}")
         grads.append(np.array(leaf.grad))
     return grads
 
@@ -199,7 +192,7 @@ def test_add_grad():
     a_b = make_bobr_leaf(a_data)
     b_b = make_bobr_leaf(b_data)
 
-    grad_buffer_node_info([a_b, b_b])
+
 
     loss_b = bobr.sum(bobr.add(a_b, b_b), 0, False)
     [ga_b, gb_b] = bobr_eval_and_get_grad(loss_b, [a_b, b_b])
@@ -227,7 +220,7 @@ def test_sub_grad():
     a_b = make_bobr_leaf(a_data)
     b_b = make_bobr_leaf(b_data)
 
-    grad_buffer_node_info([a_b, b_b])
+
 
     loss_b = bobr.sum(bobr.sub(a_b, b_b), 0, False)
 
@@ -252,7 +245,7 @@ def test_mul_grad():
     a_b = make_bobr_leaf(a_data)
     b_b = make_bobr_leaf(b_data)
 
-    grad_buffer_node_info([a_b, b_b])
+
 
 
     loss_b = bobr.sum(bobr.mul(a_b, b_b), 0, False)
@@ -286,7 +279,7 @@ def test_div_grad():
 
 
 
-    grad_buffer_node_info([a_b, b_b])
+
 
     loss_b = bobr.sum(bobr.div(a_b, b_b), 0, False); loss_b.label = "Loss"
 
@@ -709,47 +702,47 @@ def test_cross_entropy_backward():
 # ============================================================
 
 if __name__ == "__main__":
-    # print("=" * 60)
-    # print("BOBR Gradient Correctness Tests")
-    # print("=" * 60)
-    
-    # print("\n-- Forward sanity checks --")
-    # run_test("forward_exp", test_forward_exp)
-    # run_test("forward_log", test_forward_log)
-    # run_test("forward_matmul", test_forward_matmul)
-    # run_test("forward_sub", test_forward_sub)
-    
-    # print("\n-- Unary op gradients --")
-    # run_test("neg_grad", test_neg_grad)
-    # run_test("relu_grad", test_relu_grad)
-    # run_test("exp_grad", test_exp_grad)
-    # run_test("log_grad", test_log_grad)
-    
-    # print("\n-- Binary op gradients --")
-    # run_test("add_grad", test_add_grad)
-    # run_test("sub_grad", test_sub_grad)
-    # run_test("mul_grad", test_mul_grad)
-    # run_test("div_grad", test_div_grad)
-    
-    # print("\n-- Matmul gradients --")
-    # run_test("matmul_grad", test_matmul_grad)
-    # run_test("matmul_grad_nonsquare", test_matmul_grad_nonsquare)
-    
-    # print("\n-- Reduction gradients --")
-    # run_test("sum_dim_grad", test_sum_dim_grad)
-    
-    # print("\n-- Chain gradients --")
-    # run_test("chain_sub_then_mul", test_chain_sub_then_mul)
-    # run_test("chain_matmul_relu_sum", test_chain_matmul_relu_sum)
-    # run_test("chain_log_softmax", test_chain_log_softmax)
-    # run_test("shared_input_accumulation", test_shared_input_grad_accumulation)
-    
-    # print("\n-- Numerical gradient checks --")
-    # run_test("numerical_mul", test_numerical_grad_mul)
-    # run_test("numerical_sub", test_numerical_grad_sub)
-    # run_test("numerical_div", test_numerical_grad_div)
-    # run_test("numerical_chain (relu(a@b+c))", test_numerical_grad_chain)
-    
+    print("=" * 60)
+    print("BOBR Gradient Correctness Tests")
+    print("=" * 60)
+
+    print("\n-- Forward sanity checks --")
+    run_test("forward_exp", test_forward_exp)
+    run_test("forward_log", test_forward_log)
+    run_test("forward_matmul", test_forward_matmul)
+    run_test("forward_sub", test_forward_sub)
+
+    print("\n-- Unary op gradients --")
+    run_test("neg_grad", test_neg_grad)
+    run_test("relu_grad", test_relu_grad)
+    run_test("exp_grad", test_exp_grad)
+    run_test("log_grad", test_log_grad)
+
+    print("\n-- Binary op gradients --")
+    run_test("add_grad", test_add_grad)
+    run_test("sub_grad", test_sub_grad)
+    run_test("mul_grad", test_mul_grad)
+    run_test("div_grad", test_div_grad)
+
+    print("\n-- Matmul gradients --")
+    run_test("matmul_grad", test_matmul_grad)
+    run_test("matmul_grad_nonsquare", test_matmul_grad_nonsquare)
+
+    print("\n-- Reduction gradients --")
+    run_test("sum_dim_grad", test_sum_dim_grad)
+
+    print("\n-- Chain gradients --")
+    run_test("chain_sub_then_mul", test_chain_sub_then_mul)
+    run_test("chain_matmul_relu_sum", test_chain_matmul_relu_sum)
+    run_test("chain_log_softmax", test_chain_log_softmax)
+    run_test("shared_input_accumulation", test_shared_input_grad_accumulation)
+
+    print("\n-- Numerical gradient checks --")
+    run_test("numerical_mul", test_numerical_grad_mul)
+    run_test("numerical_sub", test_numerical_grad_sub)
+    run_test("numerical_div", test_numerical_grad_div)
+    run_test("numerical_chain (relu(a@b+c))", test_numerical_grad_chain)
+
     print("\n-- Cross-entropy --")
     run_test("cross_entropy_forward", test_cross_entropy_forward)
     run_test("cross_entropy_backward", test_cross_entropy_backward)

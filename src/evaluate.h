@@ -1,5 +1,6 @@
 #include "nodes.h"
 #include <memory>
+#include <vector>
 
 struct Graph {
     std::shared_ptr<Node> root;
@@ -17,7 +18,6 @@ struct Graph {
     void eval(bool debug = false);
     void sgd_step(float lr);
     void detach_grads_from_bwd_graph();
-    void clean_fwd_grad_buffers();
     void fwd_bwd_pass();
     void collect_intermidiate_nodes();
     void zero_nodes_data();

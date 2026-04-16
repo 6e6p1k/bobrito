@@ -1,6 +1,7 @@
 #include "allocator.cuh"
 #include "evaluate.h"
 #include "kernels.cuh"
+#include "optim.h"
 
 using namespace std;
 
@@ -27,6 +28,20 @@ void Graph::sgd_step(float lr) {
     }
     cudaDeviceSynchronize();
 }
+
+void SGD::optimize(float* d_weight, float* d_grad, int size) {
+    kernels::sgd<<<(size + 255) / 256, 256>>>(
+        d_weight, d_grad, LR, size);    
+    cudaDeviceSynchronize();
+}
+
+shared_ptr<SGD> make_sgd(float learning_rate) {
+    shared_ptr<SGD> optim = make_shared<SGD>();
+    optim->LR = learning_rate;
+    return optim;
+}
+
+
 
 void _apply_sgd_to_param(shared_ptr<Node> param, shared_ptr<Node> grad, float lr) {
     int n = param->get_size();
