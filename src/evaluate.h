@@ -1,3 +1,5 @@
+#pragma once
+
 #include "nodes.h"
 #include <memory>
 #include <vector>
@@ -6,7 +8,7 @@ struct Graph {
     std::shared_ptr<Node> root;
     std::vector<Node*> fwd_order;
     std::vector<Node*> bwd_order;
-    std::vector<Node*> require_grad_nodes;
+    std::vector<std::shared_ptr<Node>> require_grad_nodes;
     std::vector<Node*> intermediates;
 
     bool disposable = true;
@@ -21,6 +23,9 @@ struct Graph {
     void fwd_bwd_pass();
     void collect_intermidiate_nodes();
     void zero_nodes_data();
+    void fwd_pass();
+    void bwd_pass();
+    std::vector<std::shared_ptr<Node>> parameters();
 
     private:
     // CHECKS
@@ -35,8 +40,6 @@ struct Graph {
     void locate_bwd_nodes();
     void pass(std::vector<Node*> order);
     void debug_pass(std::vector<Node*> order);
-    void fwd_pass();
-    void bwd_pass();
     void _backward();
 };
 std::shared_ptr<Graph> make_model(std::shared_ptr<Node> root);

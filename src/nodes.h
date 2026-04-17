@@ -77,7 +77,7 @@ struct Primitive;
 using ShapePtr = std::shared_ptr<ShapeData>;
 using ContentPtr = std::shared_ptr<ContentData>;
 
-struct Node {
+struct Node : public std::enable_shared_from_this<Node>{
     Primitive* prim;
     std::string label = "";
 
@@ -91,6 +91,9 @@ struct Node {
     std::shared_ptr<Node> owned_grad;
     bool requires_grad = false;
     bool is_bwd = false;
+
+    std::shared_ptr<Node> getPtr() 
+    { return shared_from_this(); }
 
     bool is_label();
     bool is_meta();

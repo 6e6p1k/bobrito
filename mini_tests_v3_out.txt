@@ -1,0 +1,6 @@
+Train: (60000, 784), Test: (10000, 784)
+Epoch 1/5 | Train acc: 90.24% | Test acc: 91.99% | Loss: 0.3829
+Epoch 2/5 | Train acc: 94.48% | Test acc: 93.44% | Loss: 0.3873
+Epoch 3/5 | Train acc: 95.45% | Test acc: 95.16% | Loss: 0.4577
+Epoch 4/5 | Train acc: 95.96% | Test acc: 95.92% | Loss: 0.4997
+Epoch 5/5 | Train acc: 96.66% | Test acc: 95.16% | Loss: 0.4578

@@ -35,7 +35,7 @@ def accuracy(logits_np, labels_np):
 x_train, y_train, x_test, y_test = load_mnist()
 print(f"Train: {x_train.shape}, Test: {x_test.shape}")
 
-batch_size  = 128
+batch_size  = 64
 num_epochs  = 5
 lr          = 1e-3
 num_batches = len(x_train) // batch_size
@@ -80,7 +80,7 @@ for epoch in range(num_epochs):
         total   += batch_size
 
         g.sgd_step(lr)
-        g.clear_graph_data()
+        # g.clear_graph_data()
 
     # Test set eval
     test_correct = 0
@@ -96,7 +96,7 @@ for epoch in range(num_epochs):
         bobr.sync()
         test_correct += accuracy(np.array(logits.data), y_test[s:e]) * batch_size
         test_total   += batch_size
-        g.clear_graph_data()
+        # g.clear_graph_data()
 
     print(f"Epoch {epoch+1}/{num_epochs} | "
           f"Train acc: {correct/total*100:.2f}% | "

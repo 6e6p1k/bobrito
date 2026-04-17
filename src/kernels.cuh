@@ -66,4 +66,15 @@ __global__ void max_min_bwd_last_dim(
     int N,                  // Number of rows (leading dims)
     int D                   // Size of the last dimension
 );
+__global__ void adamw(
+    float* __restrict__ weight,
+    const float* __restrict__ grad,
+    float* __restrict__ m,
+    float* __restrict__ v,
+    float lr, float lr_t, float beta1, float beta2, float eps, float wd,
+    int n);
+
+
+
+
 }

@@ -95,6 +95,26 @@ __global__ void sgd(float* weight_data, float* grad_data, float lr, int n) {
     if (i < n) weight_data[i] = weight_data[i] - grad_data[i] * lr;
 }
 
+__global__ void adamw(
+    float* __restrict__ weight,
+    const float* __restrict__ grad,
+    float* __restrict__ m,
+    float* __restrict__ v,
+    float lr, float lr_t, float beta1, float beta2, float eps, float wd,
+    int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+
+    float g_i = grad[i];
+    float mi = beta1 * m[i] + (1.0f - beta1) * g_i;
+    float vi = beta2 * v[i] + (1.0f - beta2) * g_i * g_i;
+
+    m[i] = mi;
+    v[i] = vi;
+    weight[i] = weight[i] - lr_t * mi / (sqrtf(vi) + eps) - lr * wd * weight[i];
+}
+
 __global__ void scale(float* data, float limit, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) data[i] = data[i] * 2.0f * limit - limit;

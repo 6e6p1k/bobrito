@@ -193,11 +193,14 @@ PYBIND11_MODULE(bobr, m) {
             return py_lst;
         })
         .def("eval", &Graph::eval, py::arg("debug") = false)
+        .def("fwd", &Graph::fwd_pass)
+        .def("bwd", &Graph::bwd_pass)
         .def("build_backward", &Graph::backward)
         .def("fwd_bwd_pass", &Graph::fwd_bwd_pass)
         .def("sgd_step", &Graph::sgd_step, py::arg("learning_rate"))
         .def("detach_grads", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); })
-        .def("clear_graph_data", &Graph::zero_nodes_data);
+        .def("clear_graph_data", &Graph::zero_nodes_data)
+        .def("parameters", &Graph::parameters);
 
     // Module wrappers
     py::class_<Module, shared_ptr<Module>>(m, "Module")
@@ -211,11 +214,41 @@ PYBIND11_MODULE(bobr, m) {
         .def_readonly("W", &LinearLayer::W)
         .def_readonly("b", &LinearLayer::b);
 
+    py::class_<LinearReluLayer, Module, shared_ptr<LinearReluLayer>>(m, "LinearRelu")
+        .def(py::init<int, int>(), py::arg("in_dim"), py::arg("out_dim"))
+        .def("forward", &LinearReluLayer::forward)
+        .def("parameters", &LinearReluLayer::parameters)
+        .def_readonly("W", &LinearReluLayer::W)
+        .def_readonly("b", &LinearReluLayer::b);
+
     py::class_<Sequential, Module, shared_ptr<Sequential>>(m, "Sequential")
         .def(py::init<>())
         .def("add", &Sequential::add_layer)
         .def("forward", &Sequential::forward)
         .def("parameters", &Sequential::parameters);
+
+    // Optim wrappers
+    py::class_<Optimizer, std::shared_ptr<Optimizer>>(m, "Optimizer");
+
+    py::class_<AdamW, Optimizer, std::shared_ptr<AdamW>>(m, "AdamW")
+        .def(py::init<std::vector<std::shared_ptr<Node>>,
+                    float, float, float, float, float>(),
+            py::arg("params"),
+            py::arg("lr") = 1e-3f,
+            py::arg("beta1") = 0.9f,
+            py::arg("beta2") = 0.999f,
+            py::arg("eps") = 1e-8f,
+            py::arg("weight_decay") = 1e-2f)
+        .def(py::init<std::shared_ptr<Graph>,
+                    float, float, float, float, float>(),
+            py::arg("params"),
+            py::arg("lr") = 1e-3f,
+            py::arg("beta1") = 0.9f,
+            py::arg("beta2") = 0.999f,
+            py::arg("eps") = 1e-8f,
+            py::arg("weight_decay") = 1e-2f)
+        .def("step", &AdamW::step)
+        .def("zero_grad", &AdamW::zero_grad);
 
     // Creation ops
 

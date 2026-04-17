@@ -147,7 +147,7 @@ try:
 
             g.sgd_step(1e-3)
 
-            g.clear_graph_data()
+            # g.clear_graph_data()
             # W1_after = np.array(parameters[0].data)
             # print(f"W1 data norm after step: {np.linalg.norm(W1_after):.6f}")
             # break

@@ -220,6 +220,9 @@ void Graph::fwd_bwd_pass() {
     bwd_pass();
 }
 
+std::vector<std::shared_ptr<Node>> Graph::parameters() {
+    return require_grad_nodes;
+}
 // CHECKS
 bool Graph::is_root() { return root != nullptr; }
 
@@ -256,7 +259,7 @@ void Graph::locate_leaf_w_grad_nodes() {
     for (auto node : fwd_order) {
         if (!node || !node->is_meta()) continue;
         if (node->requires_grad) {
-            require_grad_nodes.push_back(node);
+            require_grad_nodes.push_back(node->getPtr());
         }
     }
 }
