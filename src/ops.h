@@ -68,8 +68,14 @@ std::shared_ptr<Node> softmax(std::shared_ptr<Node> logits);
 std::shared_ptr<Node> cross_entropy(std::shared_ptr<Node> logits, std::shared_ptr<Node> targets);
 std::shared_ptr<Node> cross_entropy_softmax(std::shared_ptr<Node> probs, std::shared_ptr<Node> targets);
 
-// idk 
-void sgd(std::vector<std::shared_ptr<Node>> params, float learning_rate);
+
+// not for public API
+void _normal(float* dst, float mean, float std, int n);
+void _uniform(float* dst, float limit, int n);
+std::shared_ptr<Node> make_leaf_node(std::vector<int> shape,
+    std::shared_ptr<ContentData> device_data);
+
+
 
 
 

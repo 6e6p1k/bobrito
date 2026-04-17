@@ -57,7 +57,7 @@ loss   = bobr.cross_entropy(logits, y); loss.label = "loss"
 g = bobr.make_model(loss)
 g.build_backward()
 
-optim = bobr.AdamW(params=model.parameters(), lr=lr, weight_decay=0)
+optim = bobr.AdamW(params=model.parameters(), lr=lr, weight_decay=1e-4)
 
 for epoch in range(num_epochs):
     perm   = np.random.permutation(len(x_train))

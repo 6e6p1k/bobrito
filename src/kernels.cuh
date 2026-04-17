@@ -2,6 +2,10 @@
 
 #include "utils.h"
 
+#define GRID_SIZE(n) ((n + 255) / 256)
+#define BLOCK_SIZE 256
+
+
 // elemwise 
 struct cuAdd { __device__ static float apply(float a, float b) { return a + b; } };
 struct cuMul { __device__ static float apply(float a, float b) { return a * b; } };

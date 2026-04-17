@@ -18,7 +18,6 @@ struct Graph {
     Graph(std::shared_ptr<Node> loss, bool disposable = true);
     void backward();
     void eval(bool debug = false);
-    void sgd_step(float lr);
     void detach_grads_from_bwd_graph();
     void fwd_bwd_pass();
     void collect_intermidiate_nodes();

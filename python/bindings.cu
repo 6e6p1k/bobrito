@@ -11,6 +11,7 @@
 #include "../src/evaluate.h"
 #include "../src/utils.h"
 #include "../src/optim.h"
+#include "../src/module.h"
 #include "pybind11/detail/common.h"
 #include "pybind11/pytypes.h"
 
@@ -116,8 +117,9 @@ PYBIND11_MODULE(bobr, m) {
         .def_property("requires_grad", [](const shared_ptr<Node>& n) { return n->requires_grad; },
                                     [](shared_ptr<Node>& n, bool requires_grad) { n->requires_grad = requires_grad; })
 
-        .def_property("label", [](const shared_ptr<Node>& n) { return n->label; },
-                             [](shared_ptr<Node>& n, const string& new_label) { n->set_label(new_label); })
+        .def_property("label",
+            [](const shared_ptr<Node>& n) { return n->label; },
+            [](shared_ptr<Node>& n, const string& new_label) { n->set_label(new_label); })
 
         // debug properties
         .def_property_readonly("is_bwd", [](const shared_ptr<Node>& n) { return n->is_bwd; })
@@ -158,7 +160,6 @@ PYBIND11_MODULE(bobr, m) {
         .def("relu", [](const shared_ptr<Node>& n) { return relu(n); })
         .def("exp", [](const shared_ptr<Node>& n) { return exp(n); })
         .def("log", [](const shared_ptr<Node>& n) { return log(n); })
-        .def("__neg__", [](const shared_ptr<Node>& n) { return neg(n); })
         .def("sqrt", [](const shared_ptr<Node>& n) { return sqrt(n); })
 
         // Binary ops
@@ -167,6 +168,7 @@ PYBIND11_MODULE(bobr, m) {
         .def("__mul__", [](const shared_ptr<Node>& n, shared_ptr<Node> b) { return mul(n, b); })
         .def("__div__", [](const shared_ptr<Node>& n, shared_ptr<Node> b) { return div(n, b); })
         .def("__matmul__", [](const shared_ptr<Node>& n, shared_ptr<Node> b) { return matmul(n, b); })
+        .def("__neg__", [](const shared_ptr<Node>& n) { return neg(n); })
 
         // Reduction ops
         .def("sum", [](const shared_ptr<Node>& n, int dim, bool keepdims = false) { return sum(n, dim, keepdims); },
@@ -197,7 +199,6 @@ PYBIND11_MODULE(bobr, m) {
         .def("bwd", &Graph::bwd_pass)
         .def("build_backward", &Graph::backward)
         .def("fwd_bwd_pass", &Graph::fwd_bwd_pass)
-        .def("sgd_step", &Graph::sgd_step, py::arg("learning_rate"))
         .def("detach_grads", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); })
         .def("clear_graph_data", &Graph::zero_nodes_data)
         .def("parameters", &Graph::parameters);
@@ -262,6 +263,8 @@ PYBIND11_MODULE(bobr, m) {
           py::arg("start"), py::arg("end"), py::arg("step") = 1);
     m.def("uniform", [](vector<int> shape, float limit = 1.0f) { return uniform(shape, limit); }, 
           py::arg("shape"), py::arg("limit") = 1.0f);
+    m.def("xavier_uniform", [](vector<int> shape) { return xavier_uniform(shape); },
+            py::arg("shape"));
     m.def("xavier_normal", [](vector<int> shape) { return xavier_normal(shape); });
     m.def("kaiming_normal", [](vector<int> shape) { return kaiming_normal(shape); });
     m.def("normal", [](vector<int> shape, float mean = 0.0f, float std = 1.0f) { return normal(shape, mean, std); },
@@ -314,7 +317,6 @@ PYBIND11_MODULE(bobr, m) {
           py::arg("node"), py::arg("export_graph") = false);
     m.def("debug_eval", [](shared_ptr<Node> node, bool export_graph, bool disposable) { debug_eval(node, export_graph, disposable); },
           py::arg("node"), py::arg("export_graph") = false, py::arg("disposable") = true);
-    m.def("sgd", &sgd, py::arg("params"), py::arg("learning_rate"));
 
     m.def("make_model", &make_model);
 

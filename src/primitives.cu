@@ -15,8 +15,6 @@
 #include "shape_data.h"
 #include "utils.h"
 
-#define GRID_SIZE(n) ((n + 255) / 256)
-#define BLOCK_SIZE 256
 #define SCALAR(n) (static_pointer_cast<ScalarNode>(n))
 
 
@@ -302,18 +300,23 @@ shared_ptr<Node> arange(int start, int end, int step) {
 // ============================================================
 //                     UNIFORM
 // ============================================================
+void _uniform(float* dst, float limit, int n) {
+    curandGenerator_t gen;
+    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+    curandSetPseudoRandomGeneratorSeed(gen, g_seed++);
+    curandGenerateUniform(gen, dst, n);
+    curandDestroyGenerator(gen);
+
+    kernels::scale<<<GRID_SIZE(n), BLOCK_SIZE>>>
+    (dst, limit, n);
+
+}
+
 static struct : Primitive {
     void eval(Node* node) override {
         int n = node->get_size();
         float limit = SCALAR(node->inputs[0])->value;
-        curandGenerator_t gen;
-        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-        curandSetPseudoRandomGeneratorSeed(gen, g_seed++);
-        curandGenerateUniform(gen, node->get_data(), n);
-        curandDestroyGenerator(gen);
-
-        kernels::scale<<<GRID_SIZE(n), BLOCK_SIZE>>>
-            (node->get_data(), limit, n);
+        _uniform(node->get_data(), limit, n);
     }
     const string name() override { return "Uniform"; }
     const string symbol() override { return "uniform"; }
@@ -342,6 +345,14 @@ shared_ptr<Node> xavier_uniform(vector<int> shape) {
 // ============================================================
 //                     NORMAL
 // ============================================================
+void _normal(float* dst, float mean, float std, int n) {
+    curandGenerator_t gen;
+    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+    curandSetPseudoRandomGeneratorSeed(gen, g_seed++);
+    curandGenerateNormal(gen, dst, n, mean, std);
+    curandDestroyGenerator(gen);
+}
+
 static struct : Primitive {
     void eval(Node* node) override {
         int n = node->get_size();
@@ -350,11 +361,7 @@ static struct : Primitive {
         float mean = SCALAR(node->inputs[0])->value;
         float std = SCALAR(node->inputs[1])->value;
         
-        curandGenerator_t gen;
-        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-        curandSetPseudoRandomGeneratorSeed(gen, g_seed++);
-        curandGenerateNormal(gen, node->get_data(), n, mean, std);
-        curandDestroyGenerator(gen);
+        _normal(node->get_data(), mean, std, n);
     }
     const string name() override { return "Normal"; }
     const string symbol() override { return "normal"; }
