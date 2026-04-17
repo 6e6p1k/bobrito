@@ -7,6 +7,7 @@
 struct Graph {
     std::shared_ptr<Node> root;
     std::vector<Node*> fwd_order;
+    std::vector<Node*> fused_fwd_order;
     std::vector<Node*> bwd_order;
     std::vector<std::shared_ptr<Node>> require_grad_nodes;
     std::vector<Node*> intermediates;
@@ -19,6 +20,7 @@ struct Graph {
     void backward();
     void eval(bool debug = false);
     void detach_grads_from_bwd_graph();
+    void fuse_fwd_order();
     void fwd_bwd_pass();
     void collect_intermidiate_nodes();
     void zero_nodes_data();

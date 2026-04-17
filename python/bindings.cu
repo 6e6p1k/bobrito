@@ -156,6 +156,86 @@ PYBIND11_MODULE(bobr, m) {
             return make_node_string(n);
         })
 
+        .def("data_from_cuda", [](shared_ptr<Node>& n, py::object gpu_array) {
+            // Require __cuda_array_interface__ — this is the standard CUDA
+            // interchange protocol. Torch, CuPy, Numba, JAX via dlpack-cuda,
+            // all implement it.
+            if (!py::hasattr(gpu_array, "__cuda_array_interface__"))
+                throw std::runtime_error(
+                    "data_from_cuda: object must expose __cuda_array_interface__ "
+                    "(torch.Tensor on CUDA, cupy.ndarray, etc.)");
+
+            py::dict iface = gpu_array.attr("__cuda_array_interface__").cast<py::dict>();
+
+            // Shape check. We want the contents to fit into the source node exactly.
+            py::tuple shape_tuple = iface["shape"].cast<py::tuple>();
+            std::vector<int> shape;
+            for (auto s : shape_tuple) shape.push_back(s.cast<int>());
+
+            // ndim must match.
+            if ((int)shape.size() != n->get_ndim())
+                throw std::logic_error(
+                    "data_from_cuda: ndim mismatch (node has " +
+                    std::to_string(n->get_ndim()) + ", got " +
+                    std::to_string(shape.size()) + ")");
+
+            // Every dim must match. Could relax to size-match but explicit is safer.
+            for (int i = 0; i < (int)shape.size(); i++) {
+                if (shape[i] != n->get_shape()[i])
+                    throw std::logic_error(
+                        "data_from_cuda: shape mismatch at dim " + std::to_string(i));
+            }
+
+            // Dtype check. __cuda_array_interface__ gives a typestr like "<f4".
+            // We only handle float32.
+            std::string typestr = iface["typestr"].cast<std::string>();
+            // accept "<f4", "=f4", "f4" — second char is endian, last two are kind+size
+            if (typestr.size() < 3 ||
+                typestr[typestr.size() - 2] != 'f' ||
+                typestr[typestr.size() - 1] != '4')
+                throw std::logic_error(
+                    "data_from_cuda: only float32 supported, got typestr='" +
+                    typestr + "'");
+
+            // Extract device pointer.
+            py::tuple data_tuple = iface["data"].cast<py::tuple>();
+            float* src_ptr = reinterpret_cast<float*>(data_tuple[0].cast<uintptr_t>());
+            // data_tuple[1] is read-only flag, we don't care — we're just reading.
+
+            // Strides check. If the source tensor is non-contiguous (e.g. a sliced
+            // view with gaps), a flat d_to_d copy would read garbage.
+            // For contiguous tensors, __cuda_array_interface__ sets strides=None.
+            if (iface.contains("strides") && !iface["strides"].is_none()) {
+                // Compute what contiguous strides would be, compare.
+                py::tuple strides_tuple = iface["strides"].cast<py::tuple>();
+                std::vector<int> strides;
+                for (auto s : strides_tuple) strides.push_back(s.cast<int>());
+
+                int expected = sizeof(float);
+                bool contig = true;
+                for (int i = (int)shape.size() - 1; i >= 0; i--) {
+                    if (strides[i] != expected) { contig = false; break; }
+                    expected *= shape[i];
+                }
+                if (!contig)
+                    throw std::logic_error(
+                        "data_from_cuda: source tensor is non-contiguous. "
+                        "Call .contiguous() on it first.");
+            }
+
+            // Allocate d_data if the node doesn't have one yet. This handles
+            // the case where the user calls data_from_cuda before the graph
+            // has ever been evaluated.
+            if (!n->is_data()) n->d_data = make_shared<ContentData>();
+            if (!n->is_data_allocated()) n->d_data->allocate(n->get_size());
+
+            // The key bit: d_to_d writes INTO the existing buffer.
+            // ContentData::d_data pointer doesn't change. Graph's cached
+            // pointers remain valid.
+            n->d_data->d_to_d(src_ptr, n->get_size());
+        })
+
+
         // Unary ops
         .def("relu", [](const shared_ptr<Node>& n) { return relu(n); })
         .def("exp", [](const shared_ptr<Node>& n) { return exp(n); })

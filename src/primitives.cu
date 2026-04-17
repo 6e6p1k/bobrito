@@ -604,7 +604,7 @@ static struct : Primitive {
         static cublasHandle_t handle = []() {
             cublasHandle_t h;
             cublasCreate(&h);
-            cublasSetMathMode(h, CUBLAS_DEFAULT_MATH);
+            cublasSetMathMode(h, CUBLAS_TF32_TENSOR_OP_MATH);
             return h;
         }();
 

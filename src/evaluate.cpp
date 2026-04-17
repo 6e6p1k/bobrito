@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <algorithm>
 
 #include "allocator.cuh"
 #include "nodes.h"
@@ -169,8 +168,6 @@ void eval_helper(vector<Node*>& fwd_order, vector<Node*>& bwd_order) {
         if (!node->is_data()) node->d_data = make_shared<ContentData>();
         if (!node->is_data_allocated()) node->d_data->allocate(size);
 
-        // (node, "GEVAL LOOP");
-
         node->prim->eval(node);
     }
 }
@@ -184,7 +181,6 @@ Graph::Graph(shared_ptr<Node> loss, bool disposable) {
     locate_leaf_w_grad_nodes();
     this->disposable = disposable;
     if (!disposable) collect_intermidiate_nodes();
-
 }
 
 void Graph::backward() {
@@ -195,29 +191,38 @@ void Graph::backward() {
 }
 
 void Graph::eval(bool debug) {
-
-    if (debug) {
-        debug_pass(fwd_order);
-    } else {
-        fwd_pass();
-    }
+    if (debug) debug_pass(fwd_order);
+    else fwd_pass();
 
     if (need_backward()) {
         if (bwd_order.size() < 0) throw logic_error("Backward order is empty!"); 
-        if (debug) {
-            debug_pass(bwd_order);
-        } else {
-            bwd_pass();
-        }
+        if (debug) debug_pass(bwd_order);
+        else bwd_pass();
     }
-    if (disposable) {
+
+    if (disposable) 
         detach_grads_from_bwd_graph();
-    }
 }
 
 void Graph::fwd_bwd_pass() {
     fwd_pass();
     bwd_pass();
+}
+
+void Graph::fuse_fwd_order() {
+    // compute fwd order uses
+    unordered_map<Node*, int> uses;
+    unordered_set<Node*> visited;
+    count_uses(root, uses, visited);
+
+    int i = fwd_order.size();
+    while (i >= 0) {
+        auto node = fwd_order[i];
+        if (uses[node]) {
+            // TODO
+        }
+        i--;
+    }
 }
 
 std::vector<std::shared_ptr<Node>> Graph::parameters() {
@@ -247,9 +252,8 @@ void Graph::compute_fwd_order() {
 void Graph::compute_bwd_order() {
     unordered_set<Node*> visited;
     for (auto leaf : require_grad_nodes) {
-        if (leaf->owned_grad) {
+        if (leaf->owned_grad)
             build_topo_inputs_bwd(leaf->owned_grad.get(), visited, bwd_order);
-        }
     }
 }
 
