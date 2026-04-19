@@ -8,6 +8,7 @@
 #include "allocator.cuh"
 #include "shape_data.h"
 
+
 #define DEBUG(__node__, space_name)                                            \
     cout << "\n=============================" << endl;                         \
     cout << "[" << space_name << "]" << endl;                                  \
@@ -111,6 +112,8 @@ struct Node : public std::enable_shared_from_this<Node>{
     ~Node() = default;
 };
 
+#include "primitives.h"
+
 struct ScalarNode : Node {
     float value;
 };
@@ -124,28 +127,6 @@ std::shared_ptr<Node> copy_node_no_prim_with_link(std::shared_ptr<Node> node);
 std::string make_node_string(std::shared_ptr<Node> node);
 std::string make_node_string(Node* node);
 void print_node(std::shared_ptr<Node> node);
-
-struct Primitive {
-    virtual void eval(Node* node) = 0;
-    virtual void vjp(std::shared_ptr<Node> fwd, std::shared_ptr<Node> dC,
-                     std::shared_ptr<Node> out[]) {}
-    virtual void allocate(Node* node) {
-        if (!node->is_data()) node->d_data = std::make_shared<ContentData>();
-        if (!node->is_data_allocated()) node->d_data->allocate(node->get_size());
-    }
-    virtual const std::string name() = 0;
-    virtual const std::string symbol() = 0;
-    virtual ~Primitive() = default;
-};
-
-static struct : Primitive {
-    void eval(Node* node) override {}
-    void vjp(std::shared_ptr<Node> fwd, std::shared_ptr<Node> dC,
-             std::shared_ptr<Node> out[]) override {}
-    const std::string name() override { return "Leaf"; }
-    const std::string symbol() override { return "leaf"; }
-} prim_leaf;
-
 
 
 

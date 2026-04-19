@@ -8,6 +8,8 @@
 #include <vector>
 #include <memory>
 
+#include "primitives.h"
+
 using namespace std;
 
 static string escape_html(const string& s) {

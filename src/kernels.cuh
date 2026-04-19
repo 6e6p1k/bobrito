@@ -42,6 +42,26 @@ __global__ void elemwise(float* a, float* b, float* out, int n, BroadcastInfo in
     out[out_idx] = Op::apply(a[a_idx], b[b_idx]);
 }
 
+template <typename BinaryOp, typename UnaryOp>
+__global__ void binary_unary(float* a, float* b, float* out, int n, BroadcastInfo info)
+{
+    int out_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (out_idx >= n) return;
+
+    // decompose flat index into nd, then recompose for each input
+    int a_idx = 0, b_idx = 0;
+    int remaining = out_idx;
+    for (int i = info.ndim - 1; i >= 0; i--) {
+        int coord = remaining % info.out_shape[i];
+        remaining /= info.out_shape[i];
+        a_idx += coord * info.a_strides[i];
+        b_idx += coord * info.b_strides[i];
+    }
+
+    out[out_idx] = UnaryOp::apply(BinaryOp::apply(a[a_idx], b[b_idx]));
+}
+
+
 template <typename Op>
 __global__ void unary(float* in, float* out, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;

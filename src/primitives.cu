@@ -12,8 +12,10 @@
 #include "kernels.cuh"
 #include "nodes.h"
 #include "ops.h"
+#include "primitives.h"
 #include "shape_data.h"
 #include "utils.h"
+#include "primitives.h"
 
 #define SCALAR(n) (static_pointer_cast<ScalarNode>(n))
 
@@ -23,9 +25,9 @@ static int g_seed = 0;
 
 void CUDA_CHECK() {
     cudaError_t err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         printf("CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
-        exit(1); 
+        exit(1);
     }
 }
 
@@ -33,7 +35,6 @@ void CUDA_LAST_ERROR() {
     cudaError_t error = cudaGetLastError();
     if(error != cudaSuccess)
     {
-        // print the CUDA error message and exit
         printf("CUDA error: %s\n", cudaGetErrorString(error));
         exit(-1);
     }
@@ -42,14 +43,12 @@ void CUDA_LAST_ERROR() {
 // ============================================================
 //                         COPY HELPER
 // ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {} // no-op, data aliased in allocate
-    void allocate(Node* node) override {
-        node->d_data = node->inputs[0]->d_data;
-    }
-    const string name() override { return "Identity"; }
-    const string symbol() override { return "id"; }
-} prim_identity;
+LeafPrim prim_leaf;
+IdentityPrim prim_identity;
+
+void IdentityPrim::allocate(Node* node) {
+    node->d_data = node->inputs[0]->d_data;
+}
 
 shared_ptr<Node> copy_node_no_prim(shared_ptr<Node> node) {
     auto out = make_shared<Node>();
@@ -102,9 +101,9 @@ shared_ptr<Node> _empty_leaf_node(vector<int> shape) {
     return out_node;
 }
 
-// -----------------------------------------------------------------
-//                          UNARY
-// -----------------------------------------------------------------
+// ============================================================
+//                            UNARY
+// ============================================================
 template <typename KernelOp>
 static void unary_eval(Node* node) {
     int n = node->get_size();
@@ -120,40 +119,30 @@ shared_ptr<Node> unary_helper(Primitive* prim, shared_ptr<Node> in_node,
     return out_node;
 }
 
-// ============================================================
-//                         RELU
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { unary_eval<cuReLU>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
-             shared_ptr<Node> out[]) override {
-        int n = fwd->inputs[0]->get_size();
-        auto A = copy_node_no_prim(fwd->inputs[0]);
-        out[0] = bwd_relu(grad, A);
-    }
-    const string name() override { return "ReLU"; }
-    const string symbol() override { return "relu"; }
-} prim_relu;
+// ========================= RELU ==========================
+ReluPrim prim_relu;
+
+void ReluPrim::eval(Node* node) { unary_eval<cuReLU>(node); }
+
+void ReluPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
+                   shared_ptr<Node> out[]) {
+    auto A = copy_node_no_prim(fwd->inputs[0]);
+    out[0] = bwd_relu(grad, A);
+}
 
 shared_ptr<Node> relu(shared_ptr<Node> a) {
     return unary_helper(&prim_relu, a, a->label + ".relu()");
 }
 
-// ============================================================
-//                        BWD RELU
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        kernels::bwd_relu<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), node->inputs[1]->get_data(),
-            node->get_data(), n);
-    }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "BwdReLU"; }
-    const string symbol() override { return "bwd_relu"; }
-} prim_bwd_relu;
+// ======================= BWD RELU ========================
+BwdReluPrim prim_bwd_relu;
+
+void BwdReluPrim::eval(Node* node) {
+    int n = node->get_size();
+    kernels::bwd_relu<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        node->inputs[0]->get_data(), node->inputs[1]->get_data(),
+        node->get_data(), n);
+}
 
 shared_ptr<Node> bwd_relu(shared_ptr<Node> grad, shared_ptr<Node> fwd_node) {
     auto out_node = make_node(&prim_bwd_relu, {fwd_node, grad},
@@ -161,88 +150,67 @@ shared_ptr<Node> bwd_relu(shared_ptr<Node> grad, shared_ptr<Node> fwd_node) {
     return out_node;
 }
 
-// ============================================================
-//                         NEG
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { unary_eval<cuNeg>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        out[0] = neg(bwd);
-    }
-    const string name() override { return "Neg"; }
-    const string symbol() override { return "-"; }
-} prim_neg;
+// ========================== NEG ==========================
+NegPrim prim_neg;
+
+void NegPrim::eval(Node* node) { unary_eval<cuNeg>(node); }
+
+void NegPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                  shared_ptr<Node> out[]) {
+    out[0] = neg(bwd);
+}
 
 shared_ptr<Node> neg(shared_ptr<Node> a) {
     return unary_helper(&prim_neg, a, "-" + a->label);
 }
 
-// ============================================================
-//                         EXP
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { unary_eval<cuExp>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        auto exp = copy_node_no_prim(fwd);
-        out[0] = mul(exp, bwd);
-    }
-    const string name() override { return "Exp"; }
-    const string symbol() override { return "exp"; }
-} prim_exp;
+// ========================== EXP ==========================
+ExpPrim prim_exp;
+
+void ExpPrim::eval(Node* node) { unary_eval<cuExp>(node); }
+
+void ExpPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                  shared_ptr<Node> out[]) {
+    auto e = copy_node_no_prim(fwd);
+    out[0] = mul(e, bwd);
+}
 
 shared_ptr<Node> exp(shared_ptr<Node> a) {
     return unary_helper(&prim_exp, a, a->label + ".exp()");
 }
 
-// ============================================================
-//                         SQRT
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { unary_eval<cuSqrt>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Sqrt"; }
-    const string symbol() override { return "sqrt"; }
-} prim_sqrt;
+// ========================= SQRT ==========================
+SqrtPrim prim_sqrt;
+
+void SqrtPrim::eval(Node* node) { unary_eval<cuSqrt>(node); }
 
 shared_ptr<Node> sqrt(shared_ptr<Node> a) {
     return unary_helper(&prim_sqrt, a, a->label + ".sqrt()");
 }
 
-// ============================================================
-//                         LOG
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { unary_eval<cuLog>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        auto A = copy_node_no_prim(fwd->inputs[0]);
-        out[0] = div(bwd, A);
-    }
-    const string name() override { return "Log"; }
-    const string symbol() override { return "log"; }
-} prim_log;
+// ========================== LOG ==========================
+LogPrim prim_log;
+
+void LogPrim::eval(Node* node) { unary_eval<cuLog>(node); }
+
+void LogPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                  shared_ptr<Node> out[]) {
+    auto A = copy_node_no_prim(fwd->inputs[0]);
+    out[0] = div(bwd, A);
+}
 
 shared_ptr<Node> log(shared_ptr<Node> a) {
     return unary_helper(&prim_log, a, a->label + ".log()");
 }
 
-// ============================================================
-//                         FULL
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        float val = SCALAR(node->inputs[0])->value;
-        kernels::fill<<<GRID_SIZE(n), BLOCK_SIZE>>>(node->get_data(), val, n);
-    }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Full"; }
-    const string symbol() override { return "full"; }
-} prim_full;
+// ========================= FULL ==========================
+FullPrim prim_full;
+
+void FullPrim::eval(Node* node) {
+    int n = node->get_size();
+    float val = SCALAR(node->inputs[0])->value;
+    kernels::fill<<<GRID_SIZE(n), BLOCK_SIZE>>>(node->get_data(), val, n);
+}
 
 shared_ptr<Node> full(int* shape, int ndim, float fill_val) {
     shared_ptr<ScalarNode> scalar = make_scalar_node(fill_val, "fill_val");
@@ -256,22 +224,16 @@ shared_ptr<Node> full(vector<int> shape, float fill_val) {
     return full(shape.data(), shape.size(), fill_val);
 }
 
-// ============================================================
-//                         ARANGE
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        float start = SCALAR(node->inputs[0])->value;
-        float step = SCALAR(node->inputs[1])->value;
-        kernels::arange<<<GRID_SIZE(n), BLOCK_SIZE>>>(node->get_data(), start,
-                                                      step, n);
-    }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Arange"; }
-    const string symbol() override { return "arange"; }
-} prim_arange;
+// ======================== ARANGE =========================
+ArangePrim prim_arange;
+
+void ArangePrim::eval(Node* node) {
+    int n = node->get_size();
+    float start = SCALAR(node->inputs[0])->value;
+    float step = SCALAR(node->inputs[1])->value;
+    kernels::arange<<<GRID_SIZE(n), BLOCK_SIZE>>>(node->get_data(), start,
+                                                  step, n);
+}
 
 shared_ptr<Node> arange(int* shape, int ndim, float start, float step) {
     auto scalar_1 = make_scalar_node(start, "start");
@@ -297,9 +259,7 @@ shared_ptr<Node> arange(int start, int end, int step) {
     return out_node;
 }
 
-// ============================================================
-//                     UNIFORM
-// ============================================================
+// ======================== UNIFORM ========================
 void _uniform(float* dst, float limit, int n) {
     curandGenerator_t gen;
     curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
@@ -307,20 +267,16 @@ void _uniform(float* dst, float limit, int n) {
     curandGenerateUniform(gen, dst, n);
     curandDestroyGenerator(gen);
 
-    kernels::scale<<<GRID_SIZE(n), BLOCK_SIZE>>>
-    (dst, limit, n);
-
+    kernels::scale<<<GRID_SIZE(n), BLOCK_SIZE>>>(dst, limit, n);
 }
 
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        float limit = SCALAR(node->inputs[0])->value;
-        _uniform(node->get_data(), limit, n);
-    }
-    const string name() override { return "Uniform"; }
-    const string symbol() override { return "uniform"; }
-} prim_uniform;
+UniformPrim prim_uniform;
+
+void UniformPrim::eval(Node* node) {
+    int n = node->get_size();
+    float limit = SCALAR(node->inputs[0])->value;
+    _uniform(node->get_data(), limit, n);
+}
 
 shared_ptr<Node> uniform(int* shape, int ndim, float limit) {
     shared_ptr<ScalarNode> scalar = make_scalar_node(limit, "limit");
@@ -342,9 +298,7 @@ shared_ptr<Node> xavier_uniform(vector<int> shape) {
     return xavier_uniform(shape.data(), shape.size());
 }
 
-// ============================================================
-//                     NORMAL
-// ============================================================
+// ======================== NORMAL =========================
 void _normal(float* dst, float mean, float std, int n) {
     curandGenerator_t gen;
     curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
@@ -353,19 +307,17 @@ void _normal(float* dst, float mean, float std, int n) {
     curandDestroyGenerator(gen);
 }
 
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        if (n % 2 != 0) throw logic_error("Size should be even.");
+NormalPrim prim_normal;
 
-        float mean = SCALAR(node->inputs[0])->value;
-        float std = SCALAR(node->inputs[1])->value;
-        
-        _normal(node->get_data(), mean, std, n);
-    }
-    const string name() override { return "Normal"; }
-    const string symbol() override { return "normal"; }
-} prim_normal;
+void NormalPrim::eval(Node* node) {
+    int n = node->get_size();
+    if (n % 2 != 0) throw logic_error("Size should be even.");
+
+    float mean = SCALAR(node->inputs[0])->value;
+    float std = SCALAR(node->inputs[1])->value;
+
+    _normal(node->get_data(), mean, std, n);
+}
 
 shared_ptr<Node> normal(int* shape, int ndim, float mean, float std) {
     shared_ptr<ScalarNode> scalar_mean = make_scalar_node(mean, "mean");
@@ -396,9 +348,9 @@ shared_ptr<Node> xavier_normal(vector<int> shape) {
     return xavier_normal(shape.data(), shape.size());
 }
 
-// -----------------------------------------------------------------
-//                          ELEMWISE
-// -----------------------------------------------------------------
+// ============================================================
+//                           ELEMWISE
+// ============================================================
 template <typename KernelOp>
 static void elemwise_eval(Node* node) {
     BroadcastInfo info = broadcast::elemwise(node);
@@ -419,128 +371,93 @@ shared_ptr<Node> elemwise_helper(Primitive* prim, shared_ptr<Node> in_node_1,
     return out_node;
 }
 
-// ============================================================
-//                          ADD
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { elemwise_eval<cuAdd>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        out[0] = bwd;
-        out[1] = bwd;
-    }
-    const string name() override { return "Add"; }
-    const string symbol() override { return "+"; }
-} prim_add;
+// ========================== ADD ==========================
+AddPrim prim_add;
+
+void AddPrim::eval(Node* node) { elemwise_eval<cuAdd>(node); }
+
+void AddPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                  shared_ptr<Node> out[]) {
+    out[0] = bwd;
+    out[1] = bwd;
+}
 
 shared_ptr<Node> add(shared_ptr<Node> a, shared_ptr<Node> b) {
     return elemwise_helper(&prim_add, a, b);
 }
 
-// ============================================================
-//                          SUB
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { elemwise_eval<cuSub>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        out[0] = bwd;
-        out[1] = neg(bwd);
-    }
-    const string name() override { return "Sub"; }
-    const string symbol() override { return "-"; }
-} prim_sub;
+// ========================== SUB ==========================
+SubPrim prim_sub;
+
+void SubPrim::eval(Node* node) { elemwise_eval<cuSub>(node); }
+
+void SubPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                  shared_ptr<Node> out[]) {
+    out[0] = bwd;
+    out[1] = neg(bwd);
+}
 
 shared_ptr<Node> sub(shared_ptr<Node> a, shared_ptr<Node> b) {
     return elemwise_helper(&prim_sub, a, b);
 }
 
-// ============================================================
-//                          MUL
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { elemwise_eval<cuMul>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        auto A = copy_node_no_prim(fwd->inputs[0]);
-        auto B = copy_node_no_prim(fwd->inputs[1]);
-                
-        out[0] = mul(bwd, B);
-        out[1] = mul(bwd, A);
-    }
-    const string name() override { return "Mul"; }
-    const string symbol() override { return "*"; }
-} prim_mul;
+// ========================== MUL ==========================
+MulPrim prim_mul;
+
+void MulPrim::eval(Node* node) { elemwise_eval<cuMul>(node); }
+
+void MulPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                  shared_ptr<Node> out[]) {
+    auto A = copy_node_no_prim(fwd->inputs[0]);
+    auto B = copy_node_no_prim(fwd->inputs[1]);
+
+    out[0] = mul(bwd, B);
+    out[1] = mul(bwd, A);
+}
 
 shared_ptr<Node> mul(shared_ptr<Node> a, shared_ptr<Node> b) {
     return elemwise_helper(&prim_mul, a, b);
 }
 
-// ============================================================
-//                          DIV
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        // cout<<"BEFORE DIV KERNEL\n";
-        // cout<<"A ptr: " << node->inputs[0]->get_data() << ", B ptr: " << node->inputs[1]->get_data() << "\n"; 
-        // cout<<"Res ptr: "<< node->get_data() << endl;
-        elemwise_eval<cuDiv>(node); 
-    }
-    const string name() override { return "Div"; }
-    const string symbol() override { return "/"; }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        auto A = copy_node_no_prim(fwd->inputs[0]);
-        auto B = copy_node_no_prim(fwd->inputs[1]);
-        out[0] = div(bwd, B);
-        // bwd_div outputs the same shape as prev_grad, 
-        // so need to reduce it to B's shape
-        auto B_grad = bwd_div(A, B, bwd);
-        out[1] = reduce_to_shape(B_grad, B->get_shape(), B->get_ndim());
-    }
-} prim_div;
+// ========================== DIV ==========================
+DivPrim prim_div;
+
+void DivPrim::eval(Node* node) { elemwise_eval<cuDiv>(node); }
+
+void DivPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                  shared_ptr<Node> out[]) {
+    auto A = copy_node_no_prim(fwd->inputs[0]);
+    auto B = copy_node_no_prim(fwd->inputs[1]);
+    out[0] = div(bwd, B);
+    auto B_grad = bwd_div(A, B, bwd);
+    out[1] = reduce_to_shape(B_grad, B->get_shape(), B->get_ndim());
+}
 
 shared_ptr<Node> div(shared_ptr<Node> a, shared_ptr<Node> b) {
     return elemwise_helper(&prim_div, a, b);
 }
 
-// ============================================================
-//                          BWD_DIV
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { 
+// ======================== BWD_DIV ========================
+BwdDivPrim prim_bwd_div;
 
-        // cout<<"\nINSIDE BWD_DIV =================================>\n";
-        int n = node->get_size();
-        auto A = node->inputs[0];
-        auto B = node->inputs[1];
-        auto prev_grad = node->inputs[2];
+void BwdDivPrim::eval(Node* node) {
+    int n = node->get_size();
+    auto A = node->inputs[0];
+    auto B = node->inputs[1];
+    auto prev_grad = node->inputs[2];
 
-        // cout<<"(input a and input b are (should be) the copies, not the actual ones)\n";
-        // cout<<"INPUT A DATA PTR: " << A->get_data() << ", INPUT B DATA PTR: " << B->get_data() << endl;
-        // cout<<"PREVIOUS GRAD DATA PTR: " << prev_grad->get_data() << endl;
-        // cout<<"Res ptr: "<< node->get_data() << endl;
-        // Resulting grad will have the same shape as previous grad, 
-        // so we broadcast A and B to prev_grad's shape if necessary.
+    auto info = broadcast::elemwise(
+        A->get_shape(), B->get_shape(),
+        A->get_strides(), B->get_strides(),
+        node->get_shape(), node->get_ndim(),
+        A->get_ndim(), B->get_ndim());
 
-        auto info = broadcast::elemwise(
-            A->get_shape(), B->get_shape(),
-            A->get_strides(), B->get_strides(),
-            node->get_shape(), node->get_ndim(),
-            A->get_ndim(), B->get_ndim());
+    kernels::bwd_div<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        A->get_data(), B->get_data(), prev_grad->get_data(), node->get_data(), n, info);
 
-        // cout<<"A BROADCASTED STRIDES: " << info.a_strides << endl;
-        // cout<<"B BROADCASTED STRIDES: " << info.b_strides << endl;
-
-        kernels::bwd_div<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            A->get_data(), B->get_data(), prev_grad->get_data(), node->get_data(), n, info);
-
-        CUDA_CHECK();
-        CUDA_LAST_ERROR();
-    }
-    const string name() override { return "BwdDiv"; }
-    const string symbol() override { return "bwd_div"; }
-} prim_bwd_div;
+    CUDA_CHECK();
+    CUDA_LAST_ERROR();
+}
 
 shared_ptr<Node> bwd_div(shared_ptr<Node> A_copy, shared_ptr<Node> B_copy, shared_ptr<Node> bwd) {
     auto node = make_node(&prim_bwd_div, {A_copy, B_copy, bwd},
@@ -548,24 +465,21 @@ shared_ptr<Node> bwd_div(shared_ptr<Node> A_copy, shared_ptr<Node> B_copy, share
     return node;
 }
 
-// ============================================================
-//                          POW
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        kernels::pow<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), node->inputs[1]->get_data(), node->get_data(), n);
-    }
-    // c = a ^ scalar
-    // dc/da = dc/dc * dc/da = bwd * (a^(scalar-1) * scalar) = bwd * (c/a * scalar)
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-                out[0] = bwd_pow(fwd, bwd);
-             }
-    const string name() override { return "Pow"; }
-    const string symbol() override { return "^"; }
-} prim_pow;
+// ========================== POW ==========================
+PowPrim prim_pow;
+
+void PowPrim::eval(Node* node) {
+    int n = node->get_size();
+    kernels::pow<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        node->inputs[0]->get_data(), node->inputs[1]->get_data(), node->get_data(), n);
+}
+
+// c = a ^ scalar
+// dc/da = dc/dc * dc/da = bwd * (a^(scalar-1) * scalar) = bwd * (c/a * scalar)
+void PowPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                  shared_ptr<Node> out[]) {
+    out[0] = bwd_pow(fwd, bwd);
+}
 
 shared_ptr<Node> pow(shared_ptr<Node> a, shared_ptr<Node> exp) {
     shared_ptr<Node> out_node =
@@ -573,19 +487,15 @@ shared_ptr<Node> pow(shared_ptr<Node> a, shared_ptr<Node> exp) {
     return out_node;
 }
 
-// ============================================================
-//                        BWD POW
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        kernels::fused_bwd_pow<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), node->inputs[1]->get_data(), node->inputs[2]->get_data(),
-            node->get_data(), n);
-    }
-    const string name() override { return "BwdPow"; }
-    const string symbol() override { return "bwd_pow"; }
-} prim_bwd_pow;
+// ======================== BWD POW ========================
+BwdPowPrim prim_bwd_pow;
+
+void BwdPowPrim::eval(Node* node) {
+    int n = node->get_size();
+    kernels::fused_bwd_pow<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        node->inputs[0]->get_data(), node->inputs[1]->get_data(), node->inputs[2]->get_data(),
+        node->get_data(), n);
+}
 
 shared_ptr<Node> bwd_pow(shared_ptr<Node> fwd, shared_ptr<Node> bwd) {
     auto mantissa = copy_node_no_prim(fwd->inputs[0]);
@@ -596,111 +506,105 @@ shared_ptr<Node> bwd_pow(shared_ptr<Node> fwd, shared_ptr<Node> bwd) {
     return out_node;
 }
 
-// ============================================================
-//                        MATMUL
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        static cublasHandle_t handle = []() {
-            cublasHandle_t h;
-            cublasCreate(&h);
-            cublasSetMathMode(h, CUBLAS_TF32_TENSOR_OP_MATH);
-            return h;
-        }();
+// ======================== MATMUL =========================
+MatMulPrim prim_matmul;
 
-        float* a_data = node->inputs[0]->get_data();
-        float* b_data = node->inputs[1]->get_data();
-        float* res_data = node->get_data();
-        float alpha = 1.0f, beta = 0.0f;
+void MatMulPrim::eval(Node* node) {
+    static cublasHandle_t handle = []() {
+        cublasHandle_t h;
+        cublasCreate(&h);
+        cublasSetMathMode(h, CUBLAS_TF32_TENSOR_OP_MATH);
+        return h;
+    }();
 
-        bool a_t = node->inputs[0]->transposed;
-        bool b_t = node->inputs[1]->transposed;
+    float* a_data = node->inputs[0]->get_data();
+    float* b_data = node->inputs[1]->get_data();
+    float* res_data = node->get_data();
+    float alpha = 1.0f, beta = 0.0f;
 
-        int a_ndim = node->inputs[0]->h_meta->ndim;
-        int b_ndim = node->inputs[1]->h_meta->ndim;
-        int* a_shape = node->inputs[0]->h_meta->shape();
-        int* b_shape = node->inputs[1]->h_meta->shape();
+    bool a_t = node->inputs[0]->transposed;
+    bool b_t = node->inputs[1]->transposed;
 
-        // Physical storage: A is [a_rows, a_cols], B is [b_rows, b_cols]
-        int a_rows = a_shape[a_ndim - 2];
-        int a_cols = a_shape[a_ndim - 1];
-        int b_rows = b_shape[b_ndim - 2];
-        int b_cols = b_shape[b_ndim - 1];
+    int a_ndim = node->inputs[0]->h_meta->ndim;
+    int b_ndim = node->inputs[1]->h_meta->ndim;
+    int* a_shape = node->inputs[0]->h_meta->shape();
+    int* b_shape = node->inputs[1]->h_meta->shape();
 
-        // Logical matmul: C = op(A) @ op(B)
-        //   op(A) is [M, K], op(B) is [K, N], C is [M, N]
-        int M = a_t ? a_cols : a_rows;
-        int K = a_t ? a_rows : a_cols;
-        int N = b_t ? b_rows : b_cols;
+    // Physical storage: A is [a_rows, a_cols], B is [b_rows, b_cols]
+    int a_rows = a_shape[a_ndim - 2];
+    int a_cols = a_shape[a_ndim - 1];
+    int b_rows = b_shape[b_ndim - 2];
+    int b_cols = b_shape[b_ndim - 1];
 
-        // Batch
-        int a_batch = 1, b_batch = 1;
-        for (int i = 0; i < a_ndim - 2; i++) a_batch *= a_shape[i];
-        for (int i = 0; i < b_ndim - 2; i++) b_batch *= b_shape[i];
-        int batch = std::max(a_batch, b_batch);
+    // Logical matmul: C = op(A) @ op(B)
+    //   op(A) is [M, K], op(B) is [K, N], C is [M, N]
+    int M = a_t ? a_cols : a_rows;
+    int K = a_t ? a_rows : a_cols;
+    int N = b_t ? b_rows : b_cols;
 
-        // Row-major trick: to get C = A @ B in row-major,
-        // tell cuBLAS (column-major) to compute C^T = B^T @ A^T.
-        //
-        // A row-major [r, c] matrix in memory IS a column-major [c, r] matrix.
-        // So cuBLAS sees:
-        //   physical A as col-major [a_cols, a_rows]  (already transposed vs
-        //   logical) physical B as col-major [b_cols, b_rows]  (already
-        //   transposed vs logical)
-        //
-        // We want cuBLAS to compute: C^T = op'(B) @ op'(A)
-        //
-        // For B (cuBLAS's first matrix):
-        //   cuBLAS sees physical B as col-major [b_cols, b_rows].
-        //   We need logical B^T for the row-major trick.
-        //   If b_t == false: logical B is [b_rows, b_cols], we need B^T =
-        //   [b_cols, b_rows].
-        //     cuBLAS already sees [b_cols, b_rows] → OP_N
-        //   If b_t == true: logical B is [b_cols, b_rows], we need B^T =
-        //   [b_rows, b_cols].
-        //     cuBLAS sees [b_cols, b_rows], needs [b_rows, b_cols] → OP_T
-        //
-        // Same logic for A (cuBLAS's second matrix):
-        //   If a_t == false: OP_N
-        //   If a_t == true:  OP_T
+    // Batch
+    int a_batch = 1, b_batch = 1;
+    for (int i = 0; i < a_ndim - 2; i++) a_batch *= a_shape[i];
+    for (int i = 0; i < b_ndim - 2; i++) b_batch *= b_shape[i];
+    int batch = std::max(a_batch, b_batch);
 
-        cublasOperation_t op_cublas_B = b_t ? CUBLAS_OP_T : CUBLAS_OP_N;
-        cublasOperation_t op_cublas_A = a_t ? CUBLAS_OP_T : CUBLAS_OP_N;
+    // Row-major trick: to get C = A @ B in row-major,
+    // tell cuBLAS (column-major) to compute C^T = B^T @ A^T.
+    //
+    // A row-major [r, c] matrix in memory IS a column-major [c, r] matrix.
+    // So cuBLAS sees:
+    //   physical A as col-major [a_cols, a_rows]  (already transposed vs logical)
+    //   physical B as col-major [b_cols, b_rows]  (already transposed vs logical)
+    //
+    // We want cuBLAS to compute: C^T = op'(B) @ op'(A)
+    //
+    // For B (cuBLAS's first matrix):
+    //   cuBLAS sees physical B as col-major [b_cols, b_rows].
+    //   We need logical B^T for the row-major trick.
+    //   If b_t == false: logical B is [b_rows, b_cols], we need B^T = [b_cols, b_rows].
+    //     cuBLAS already sees [b_cols, b_rows] → OP_N
+    //   If b_t == true: logical B is [b_cols, b_rows], we need B^T = [b_rows, b_cols].
+    //     cuBLAS sees [b_cols, b_rows], needs [b_rows, b_cols] → OP_T
+    //
+    // Same logic for A (cuBLAS's second matrix):
+    //   If a_t == false: OP_N
+    //   If a_t == true:  OP_T
 
-        // Leading dimensions: always the number of columns in physical
-        // row-major storage. This equals the number of rows in cuBLAS's
-        // column-major view.
-        int ld_b = b_cols;
-        int ld_a = a_cols;
-        int ld_c = N;  // output is [M, N] in row-major, so ld = N
+    cublasOperation_t op_cublas_B = b_t ? CUBLAS_OP_T : CUBLAS_OP_N;
+    cublasOperation_t op_cublas_A = a_t ? CUBLAS_OP_T : CUBLAS_OP_N;
 
-        int a_stride = a_rows * a_cols;
-        int b_stride = b_rows * b_cols;
-        int c_stride = M * N;
+    // Leading dimensions: always the number of columns in physical
+    // row-major storage. This equals the number of rows in cuBLAS's
+    // column-major view.
+    int ld_b = b_cols;
+    int ld_a = a_cols;
+    int ld_c = N;  // output is [M, N] in row-major, so ld = N
 
-        if (b_ndim < a_ndim) b_stride = 0;
-        if (a_ndim < b_ndim) a_stride = 0;
+    int a_stride = a_rows * a_cols;
+    int b_stride = b_rows * b_cols;
+    int c_stride = M * N;
 
-        // cuBLAS: C^T(N x M) = op'(B)(N x K) @ op'(A)(K x M)
-        //   m = N, n = M, k = K
-        cublasGemmStridedBatchedEx(
-            handle, op_cublas_B, op_cublas_A, N, M, K, &alpha, b_data,
-            CUDA_R_32F, ld_b, b_stride, a_data, CUDA_R_32F, ld_a, a_stride,
-            &beta, res_data, CUDA_R_32F, ld_c, c_stride, batch,
-            CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP);
-    }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        auto A = copy_node_no_prim(fwd->inputs[0]);
-        auto B = copy_node_no_prim(fwd->inputs[1]);
-        A->transposed = true;
-        B->transposed = true;
-        out[0] = matmul(bwd, B);
-        out[1] = matmul(A, bwd);
-    }
-    const string name() override { return "MatMul"; }
-    const string symbol() override { return "@"; }
-} prim_matmul;
+    if (b_ndim < a_ndim) b_stride = 0;
+    if (a_ndim < b_ndim) a_stride = 0;
+
+    // cuBLAS: C^T(N x M) = op'(B)(N x K) @ op'(A)(K x M)
+    //   m = N, n = M, k = K
+    cublasGemmStridedBatchedEx(
+        handle, op_cublas_B, op_cublas_A, N, M, K, &alpha, b_data,
+        CUDA_R_32F, ld_b, b_stride, a_data, CUDA_R_32F, ld_a, a_stride,
+        &beta, res_data, CUDA_R_32F, ld_c, c_stride, batch,
+        CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+}
+
+void MatMulPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                     shared_ptr<Node> out[]) {
+    auto A = copy_node_no_prim(fwd->inputs[0]);
+    auto B = copy_node_no_prim(fwd->inputs[1]);
+    A->transposed = true;
+    B->transposed = true;
+    out[0] = matmul(bwd, B);
+    out[1] = matmul(A, bwd);
+}
 
 shared_ptr<Node> matmul(shared_ptr<Node> a, shared_ptr<Node> b) {
     auto [out_shape, out_ndim] = check_shape_return_out_shape::matmul(a, b);
@@ -710,9 +614,9 @@ shared_ptr<Node> matmul(shared_ptr<Node> a, shared_ptr<Node> b) {
     return out_node;
 }
 
-// -----------------------------------------------------------------
+// ============================================================
 //                          REDUCTION LD
-// -----------------------------------------------------------------
+// ============================================================
 struct cubSum {
     static cudaError_t reduce(void* tmp, size_t& tmp_bytes, float* in,
                               float* out, int n, int* begin, int* end) {
@@ -780,99 +684,79 @@ shared_ptr<Node> reduction_ld_helper(Primitive* prim,
     return out_node;
 }
 
-// ============================================================
-//                       Max & Min Bwd
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { 
-        auto fwd_node = node->inputs[0];
-        auto grad = node->inputs[1];
-        int rows = fwd_node->get_size();
-        int last_dim = fwd_node->inputs[0]->get_size() / rows;
-        kernels::max_min_bwd_last_dim<<<GRID_SIZE(rows * last_dim), BLOCK_SIZE>>>(
+// ===================== Max & Min Bwd =====================
+MaxMinBwdPrim prim_max_min_bwd;
+
+void MaxMinBwdPrim::eval(Node* node) {
+    auto fwd_node = node->inputs[0];
+    auto grad = node->inputs[1];
+    int rows = fwd_node->get_size();
+    int last_dim = fwd_node->inputs[0]->get_size() / rows;
+    kernels::max_min_bwd_last_dim<<<GRID_SIZE(rows * last_dim), BLOCK_SIZE>>>(
         fwd_node->inputs[0]->get_data(),  // original input [N, D]
         fwd_node->get_data(),              // max values [N]
         grad->get_data(),                  // upstream gradient [N]
         node->get_data(),                  // output gradient [N, D]
         rows, last_dim);
-    }
-    const string name() override { return "MaxMinBwd"; }
-    const string symbol() override { return "max_min_bwd()"; }
-} prim_max_min_bwd;
+}
 
-shared_ptr<Node> max_min_bwd(shared_ptr<Node> fwd_node, shared_ptr<Node>  grad) {
+shared_ptr<Node> max_min_bwd(shared_ptr<Node> fwd_node, shared_ptr<Node> grad) {
     auto out_node = make_node(&prim_max_min_bwd, {fwd_node, grad},
                               fwd_node->inputs[0]->get_shape(), fwd_node->inputs[0]->get_ndim());
     return out_node;
 }
 
-// ============================================================
-//                          SUMLD
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { reduction_ld_eval<cubSum>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        out[0] = expand_ld(bwd, fwd->inputs[0]->get_shape(), fwd->inputs[0]->get_ndim());
-    }
-    const string name() override { return "SumLD"; }
-    const string symbol() override { return "sum(dim=-1)"; }
-} prim_sum_ld;
+// ========================= SUMLD =========================
+SumLDPrim prim_sum_ld;
+
+void SumLDPrim::eval(Node* node) { reduction_ld_eval<cubSum>(node); }
+
+void SumLDPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                    shared_ptr<Node> out[]) {
+    out[0] = expand_ld(bwd, fwd->inputs[0]->get_shape(), fwd->inputs[0]->get_ndim());
+}
 
 shared_ptr<Node> sum_ld(shared_ptr<Node> a) {
     return reduction_ld_helper(&prim_sum_ld, a);
 }
 
-// ============================================================
-//                          MINLD
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { reduction_ld_eval<cubMin>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
-             shared_ptr<Node> out[]) override {                 
-                out[0] = max_min_bwd(fwd, grad);
-            }
-    const string name() override { return "MinLD"; }
-    const string symbol() override { return "min(dim=-1)"; }
-} prim_min_ld;
+// ========================= MINLD =========================
+MinLDPrim prim_min_ld;
+
+void MinLDPrim::eval(Node* node) { reduction_ld_eval<cubMin>(node); }
+
+void MinLDPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
+                    shared_ptr<Node> out[]) {
+    out[0] = max_min_bwd(fwd, grad);
+}
 
 shared_ptr<Node> min_ld(shared_ptr<Node> a) {
     return reduction_ld_helper(&prim_min_ld, a);
 }
 
-// ============================================================
-//                          MAXLD
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { reduction_ld_eval<cubMax>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
-             shared_ptr<Node> out[]) override {
-                out[0] = max_min_bwd(fwd, grad);
+// ========================= MAXLD =========================
+MaxLDPrim prim_max_ld;
 
-             }
-    const string name() override { return "MaxLD"; }
-    const string symbol() override { return "max(dim=-1)"; }
-} prim_max_ld;
+void MaxLDPrim::eval(Node* node) { reduction_ld_eval<cubMax>(node); }
+
+void MaxLDPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
+                    shared_ptr<Node> out[]) {
+    out[0] = max_min_bwd(fwd, grad);
+}
 
 shared_ptr<Node> max_ld(shared_ptr<Node> a) {
     return reduction_ld_helper(&prim_max_ld, a);
 }
 
-// ============================================================
-//                          EXPANDLD
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        kernels::expand_last_dim<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), node->get_data(),
-            node->get_shape()[node->get_ndim() - 1], n);
-    }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "ExpandLD"; }
-    const string symbol() override { return "expand(dim=-1)"; }
-} prim_expand_ld;
+// ======================= EXPANDLD ========================
+ExpandLDPrim prim_expand_ld;
+
+void ExpandLDPrim::eval(Node* node) {
+    int n = node->get_size();
+    kernels::expand_last_dim<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        node->inputs[0]->get_data(), node->get_data(),
+        node->get_shape()[node->get_ndim() - 1], n);
+}
 
 shared_ptr<Node> expand_ld(shared_ptr<Node> a, int* out_shape, int out_ndim) {
     bool same_ndim_case =
@@ -888,10 +772,9 @@ shared_ptr<Node> expand_ld(shared_ptr<Node> a, int* out_shape, int out_ndim) {
     return out_node;
 }
 
-// -----------------------------------------------------------------
-//                          REDUCTION
-// -----------------------------------------------------------------
-
+// ============================================================
+//                           REDUCTION
+// ============================================================
 shared_ptr<Node> reduction_helper(Primitive* prim, shared_ptr<Node> a, int dim,
                                   bool keepdims) {
     // 0. handle negative indexing
@@ -958,17 +841,10 @@ shared_ptr<Node> reduction_helper(Primitive* prim, shared_ptr<Node> a) {
     return node_after_sum;
 }
 
+// ========================== SUM ==========================
+SumPrim prim_sum;
 
-// ============================================================
-//                          SUM
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { reduction_ld_eval<cubSum>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Sum"; }
-    const string symbol() override { return "sum()"; }
-} prim_sum;
+void SumPrim::eval(Node* node) { reduction_ld_eval<cubSum>(node); }
 
 shared_ptr<Node> sum(shared_ptr<Node> a, int dim, bool keepdims) {
     if (dim == 52 && keepdims == false) {
@@ -977,16 +853,10 @@ shared_ptr<Node> sum(shared_ptr<Node> a, int dim, bool keepdims) {
     return reduction_helper(&prim_sum_ld, a, dim, keepdims);
 }
 
-// ============================================================
-//                          MIN
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { reduction_ld_eval<cubSum>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Min"; }
-    const string symbol() override { return "min()"; }
-} prim_min;
+// ========================== MIN ==========================
+MinPrim prim_min;
+
+void MinPrim::eval(Node* node) { reduction_ld_eval<cubSum>(node); }
 
 shared_ptr<Node> min(shared_ptr<Node> a, int dim, bool keepdims) {
     if (dim == 52 && keepdims == false) {
@@ -995,17 +865,10 @@ shared_ptr<Node> min(shared_ptr<Node> a, int dim, bool keepdims) {
     return reduction_helper(&prim_min_ld, a, dim, keepdims);
 }
 
-// ============================================================
-//                          Max
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override { reduction_ld_eval<cubSum>(node); }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> grad,
-             shared_ptr<Node> out[]) override { 
-            }
-    const string name() override { return "Max"; }
-    const string symbol() override { return "max()"; }
-} prim_max;
+// ========================== MAX ==========================
+MaxPrim prim_max;
+
+void MaxPrim::eval(Node* node) { reduction_ld_eval<cubSum>(node); }
 
 shared_ptr<Node> max(shared_ptr<Node> a, int dim, bool keepdims) {
     if (dim == 52 && keepdims == false) {
@@ -1014,67 +877,55 @@ shared_ptr<Node> max(shared_ptr<Node> a, int dim, bool keepdims) {
     return reduction_helper(&prim_max_ld, a, dim, keepdims);
 }
 
-// ============================================================
-//                         TRANSPOSE
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        // Transpose swaps the last two dimensions for 2D tensors
-        // For higher dimensions, we'd need to generalize this
-        int n = node->get_size();
-        int last_dim = node->inputs[0]->get_shape()[node->inputs[0]->get_ndim() - 1];
-        int second_last_dim = node->inputs[0]->get_shape()[node->inputs[0]->get_ndim() - 2];
-        
-        // For a [M, N] tensor, transpose to [N, M]
-        // Read element [i, j] from position i*N + j
-        // Write element [j, i] to position j*M + i
-        kernels::transpose<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), node->get_data(),
-            second_last_dim, last_dim, n);
-    }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        // Transpose is its own inverse
-        out[0] = transpose(bwd);
-    }
-    const string name() override { return "Transpose"; }
-    const string symbol() override { return "transpose"; }
-} prim_transpose;
+// ======================= TRANSPOSE =======================
+TransposePrim prim_transpose;
+
+void TransposePrim::eval(Node* node) {
+    int n = node->get_size();
+    int last_dim = node->inputs[0]->get_shape()[node->inputs[0]->get_ndim() - 1];
+    int second_last_dim = node->inputs[0]->get_shape()[node->inputs[0]->get_ndim() - 2];
+
+    kernels::transpose<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        node->inputs[0]->get_data(), node->get_data(),
+        second_last_dim, last_dim, n);
+}
+
+void TransposePrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                        shared_ptr<Node> out[]) {
+    out[0] = transpose(bwd);
+}
 
 shared_ptr<Node> transpose(shared_ptr<Node> a) {
     int ndim = a->get_ndim();
     if (ndim < 2) throw std::logic_error("Cannot transpose tensor with < 2 dims");
-    
+
     int* new_shape = new int[ndim];
     for (int i = 0; i < ndim; ++i) new_shape[i] = a->get_shape()[i];
-    
+
     // Swap last two dimensions
     int tmp = new_shape[ndim - 1];
     new_shape[ndim - 1] = new_shape[ndim - 2];
     new_shape[ndim - 2] = tmp;
-    
+
     shared_ptr<Node> out_node = make_node(&prim_transpose, {a}, new_shape, ndim);
     out_node->set_label(a->label + ".transpose()");
     return out_node;
 }
 
-// ============================================================
-//                         CONTIGUOUS
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {
-        int n = node->get_size();
-        ContiguousInfo info = broadcast::contiguous(node);
-        kernels::contiguous<<<GRID_SIZE(n), BLOCK_SIZE>>>(
-            node->inputs[0]->get_data(), node->get_data(), n, info);
-    }
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {
-        out[0] = contiguous(bwd);
-    }
-    const string name() override { return "Contiguous"; }
-    const string symbol() override { return "contiguous"; }
-} prim_contiguous;
+// ====================== CONTIGUOUS =======================
+ContiguousPrim prim_contiguous;
+
+void ContiguousPrim::eval(Node* node) {
+    int n = node->get_size();
+    ContiguousInfo info = broadcast::contiguous(node);
+    kernels::contiguous<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        node->inputs[0]->get_data(), node->get_data(), n, info);
+}
+
+void ContiguousPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                         shared_ptr<Node> out[]) {
+    out[0] = contiguous(bwd);
+}
 
 shared_ptr<Node> contiguous(shared_ptr<Node> a) {
     shared_ptr<Node> out_node =
@@ -1083,22 +934,18 @@ shared_ptr<Node> contiguous(shared_ptr<Node> a) {
     return out_node;
 }
 
-// ============================================================
-//                         RESHAPE
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {}
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override { 
-        out[0] = reshape(bwd, fwd->inputs[0]->get_shape(),
-                         fwd->inputs[0]->get_ndim());
-    }
-    void allocate(Node* node) override {
-        node->d_data = node->inputs[0]->d_data; // share buffer
-    }
-    const string name() override { return "Reshape"; }
-    const string symbol() override { return "reshape"; }
-} prim_reshape;
+// ======================== RESHAPE ========================
+ReshapePrim prim_reshape;
+
+void ReshapePrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
+                      shared_ptr<Node> out[]) {
+    out[0] = reshape(bwd, fwd->inputs[0]->get_shape(),
+                     fwd->inputs[0]->get_ndim());
+}
+
+void ReshapePrim::allocate(Node* node) {
+    node->d_data = node->inputs[0]->d_data;  // share buffer
+}
 
 shared_ptr<Node> reshape(shared_ptr<Node> a, int* new_shape, int new_ndim) {
     // quick check
@@ -1116,16 +963,8 @@ shared_ptr<Node> reshape(shared_ptr<Node> a, int* new_shape, int new_ndim) {
     return out_node;
 }
 
-// ============================================================
-//                     REDUCE TO SHAPE
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {}
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> dC,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Skip"; }
-    const string symbol() override { return "skip"; }
-} prim_reduce_to_shape;
+// ==================== REDUCE TO SHAPE ====================
+ReduceToShapePrim prim_reduce_to_shape;
 
 shared_ptr<Node> reduce_to_shape(shared_ptr<Node> a, int* out_shape,
                                  int out_ndim) {
@@ -1159,9 +998,7 @@ shared_ptr<Node> reduce_to_shape(shared_ptr<Node> a, vector<int> out_shape) {
     return reduce_to_shape(a, out_shape.data(), out_shape.size());
 }
 
-// ============================================================
-//                        LINEAR
-// ============================================================
+// ======================== LINEAR =========================
 shared_ptr<Node> linear(shared_ptr<Node> a, int out_dim) {
     int in_dim = a->get_shape()[a->get_ndim() - 1];
     int w_shape[2] = {in_dim, out_dim};
@@ -1175,20 +1012,8 @@ shared_ptr<Node> linear(shared_ptr<Node> a, int out_dim) {
     return add(matmul(a, W), b);
 }
 
-// shared_ptr<Node> linear(shared_ptr<Node> x, shared_ptr<Node> W, shared_ptr<Node> b) {
-//     return add(matmul(x, W), b);
-// }
-
-// ============================================================
-//                        CROSS ENTROPY
-// ============================================================
-static struct : Primitive {
-    void eval(Node* node) override {}
-    void vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
-             shared_ptr<Node> out[]) override {}
-    const string name() override { return "Softmax"; }
-    const string symbol() override { return "softmax"; }
-} prim_softmax;
+// ===================== CROSS ENTROPY =====================
+SoftmaxPrim prim_softmax;
 
 //  <===================== from logits ========================>
 shared_ptr<Node> cross_entropy(shared_ptr<Node> logits, shared_ptr<Node> targets) {
@@ -1223,9 +1048,7 @@ shared_ptr<Node> cross_entropy_softmax(shared_ptr<Node> probs, shared_ptr<Node> 
     return loss;
 }
 
-// ============================================================
-//                        SOFTMAX
-// ============================================================
+// ======================== SOFTMAX ========================
 shared_ptr<Node> softmax(shared_ptr<Node> logits) {
     auto maxes = max(logits, -1, true);        // [batch, 1]
     auto shifted = sub(logits, maxes);         // [batch, classes]
@@ -1235,3 +1058,7 @@ shared_ptr<Node> softmax(shared_ptr<Node> logits) {
     result->set_label("softmax(" + logits->label + ")");
     return result;
 }
+
+// ============================================================
+//                        FUSED OPS
+// ============================================================

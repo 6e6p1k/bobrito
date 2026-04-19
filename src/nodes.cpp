@@ -4,6 +4,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "primitives.h"
 #include "shape_data.h"
 #include "graph_viz.h"
 
@@ -74,7 +75,7 @@ std::shared_ptr<Node> make_node(Primitive* prim,
     node->is_bwd = is_bwd;
     if (is_bwd) {
         for (auto input : inputs)
-            if (input->prim->name() != "Identity")
+            if (input->prim->category() != PrimCategory::Identity)
                 input->outputs.push_back(node);
     }
     return node;

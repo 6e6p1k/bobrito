@@ -218,7 +218,7 @@ void Graph::fuse_fwd_order() {
     int i = fwd_order.size();
     while (i >= 0) {
         auto node = fwd_order[i];
-        if (uses[node]) {
+        if (uses[node] == 1) {
             // TODO
         }
         i--;
