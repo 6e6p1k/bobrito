@@ -61,7 +61,7 @@ build-*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
-Makefile
+# Makefile (im tired of writing a new one sorryyyy)
 install_manifest.txt 
 compile_commands.json
 
