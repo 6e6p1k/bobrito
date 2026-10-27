@@ -5,7 +5,7 @@ Debug: Check what loss values actually look like
 
 import sys
 sys.path.insert(0, 'python')
-import bobr
+import bobrito as bobr
 import numpy as np
 import warnings
 warnings.filterwarnings('ignore')

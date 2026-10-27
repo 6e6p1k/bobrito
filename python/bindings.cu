@@ -89,8 +89,8 @@ void steal_data(shared_ptr<Node>& thief, shared_ptr<Node> victim) {
     // as its ref_count is dropped to 0
 }
 
-PYBIND11_MODULE(bobr, m) {
-    m.doc() = "BOBR Framework - CUDA autograd library";
+PYBIND11_MODULE(bobrito, m) {
+    m.doc() = "Bobrito - CUDA autograd library";
     
     // Node wrapper
     py::class_<Node, shared_ptr<Node>>(m, "Node")

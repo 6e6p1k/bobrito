@@ -3,8 +3,7 @@
 
 import sys
 sys.path.insert(0, 'python')
-import bobr
-
+import bobrito as bobr
 print("=" * 60)
 print("Testing BOBR Python Bindings")
 print("=" * 60)

@@ -3,7 +3,7 @@ import numpy as np
 import sys
 import time
 sys.path.insert(0, 'python')
-import bobr
+import bobrito as bobr
 from mltoolkit.testing_tools import timing
 torch.set_float32_matmul_precision('high')
 

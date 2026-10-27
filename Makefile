@@ -1,69 +1,107 @@
-# ── Compilers ──
-NVCC      := nvcc
-CXX       := g++
+# bobr-framework-cuda Makefile
+# Machine-specific settings: copy config.mk.example → config.mk
+-include config.mk
+include config.mk.example
 
-# ── Flags ──
-# -std=c++17  : use C++17 features (structured bindings, shared_ptr, etc.)
-# -lcublas    : link against cuBLAS library (for matmul)
-# -Isrc       : look for headers in src/ directory
-CXXFLAGS  := -std=c++17 -Isrc
-NVCCFLAGS := -std=c++17 -Isrc -I/usr/include
-LDFLAGS   := -lcublas -lcurand -lcuda -lcudart -lnvrtc
+ROOT_DIR   := $(abspath .)
+SRC_DIR    := src
+TEST_DIR   := tests
+BUILD_DIR  := build
+OUT_DIR    := out
+PY_BUILD_DIR := build/python
+PYTHON_DIR := python
 
-# ── Directories ──
-SRC_DIR   := src
-TEST_DIR  := tests
-BUILD_DIR := build
-OUT_DIR   := out
+NVCC         := $(CUDA_HOME)/bin/nvcc
+CUDA_LIB_DIR ?= $(CUDA_HOME)/lib64
+CXX          := g++
 
+# Host + device flags
+CXXFLAGS   := -std=c++17 -Isrc -MMD -MP
+NVCCFLAGS  := -std=c++17 -Isrc \
+              -arch=$(GPU_ARCH) -lineinfo \
+              -I$(CUDA_HOME)/include \
+              -MMD -MP \
+              -DBOBR_SRC_DIR=\"$(abspath $(SRC_DIR))\" \
+              -DNVRTC_ARCH_FLAG=\"--gpu-architecture=$(GPU_ARCH)\"
+# rpath: the extension finds the toolkit's libraries without LD_LIBRARY_PATH
+LDFLAGS    := -L$(CUDA_LIB_DIR) -Xlinker -rpath -Xlinker $(CUDA_LIB_DIR) \
+              -lcublas -lcurand -lcuda -lcudart -lnvrtc
+
+export PATH := $(CUDA_HOME)/bin:$(PATH)
+
+# ── C++ test binary sources ──
 CPP_SRCS := $(SRC_DIR)/shape_data.cpp \
-			$(SRC_DIR)/utils.cpp \
-			$(SRC_DIR)/nodes.cpp \
-			$(SRC_DIR)/evaluate.cpp \
-			$(SRC_DIR)/graph_viz.cpp
+            $(SRC_DIR)/utils.cpp \
+            $(SRC_DIR)/nodes.cpp \
+            $(SRC_DIR)/evaluate.cpp \
+            $(SRC_DIR)/graph_viz.cpp
 
 CU_SRCS  := $(SRC_DIR)/primitives.cu \
-			$(SRC_DIR)/kernels.cu \
-			$(SRC_DIR)/allocator.cu \
-			$(SRC_DIR)/optim.cu
+            $(SRC_DIR)/kernels.cu \
+            $(SRC_DIR)/allocator.cu \
+            $(SRC_DIR)/optim.cu
 
-# Convert source paths to object paths:
-#   $(patsubst pattern,replacement,text)
-#   src/node.cpp → build/node.o
 CPP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SRCS))
 CU_OBJS  := $(patsubst $(SRC_DIR)/%.cu,$(BUILD_DIR)/%.o,$(CU_SRCS))
-
-# All object files combined — needed to link any executable
 ALL_OBJS := $(CPP_OBJS) $(CU_OBJS)
 
-# ══════════════════════════════════════════════════════════════
-# Directory creation
-# ══════════════════════════════════════════════════════════════
+# ── Python extension sources ──
+PY_CPP_SRCS := $(SRC_DIR)/nodes.cpp \
+               $(SRC_DIR)/utils.cpp \
+               $(SRC_DIR)/graph_viz.cpp \
+               $(SRC_DIR)/evaluate.cpp \
+               $(SRC_DIR)/shape_data.cpp
 
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+PY_CU_SRCS  := $(SRC_DIR)/allocator.cu \
+               $(SRC_DIR)/module.cu \
+               $(SRC_DIR)/kernels.cu \
+               $(SRC_DIR)/optim.cu \
+               $(SRC_DIR)/primitives.cu \
+               $(SRC_DIR)/fusion_reactor.cu
 
-$(OUT_DIR):
-	mkdir -p $(OUT_DIR)
+PY_CPP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(PY_BUILD_DIR)/%.o,$(PY_CPP_SRCS))
+PY_CU_OBJS  := $(patsubst $(SRC_DIR)/%.cu,$(PY_BUILD_DIR)/%.o,$(PY_CU_SRCS))
+PY_ALL_OBJS := $(PY_CPP_OBJS) $(PY_CU_OBJS)
+
+PYBIND_FLAGS    := $(shell $(PYTHON) -m pybind11 --includes 2>/dev/null)
+# sysconfig works inside a venv, where python3-config does not exist
+PYTHON_SUFFIX   := $(shell $(PYTHON) -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))" 2>/dev/null)
+PY_MODULE       := $(PY_BUILD_DIR)/bobrito$(PYTHON_SUFFIX)
+PY_MODULE_LINK  := $(PYTHON_DIR)/bobrito$(PYTHON_SUFFIX)
+
+# Auto-generated header dependencies
+DEP_FILES := $(CPP_OBJS:.o=.d) $(CU_OBJS:.o=.d) \
+             $(PY_CPP_OBJS:.o=.d) $(PY_CU_OBJS:.o=.d)
+-include $(DEP_FILES)
 
 # ══════════════════════════════════════════════════════════════
-# Pattern rules — how to compile each file type
-# ══════════════════════════════════════════════════════════════
+$(BUILD_DIR) $(PY_BUILD_DIR) $(OUT_DIR):
+	mkdir -p $@
 
-# Rule: any .cpp → .o  (uses g++)
+# ── Native test objects ──
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Rule: any .cu → .o  (uses nvcc)
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cu | $(BUILD_DIR)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
+# ── Python extension objects ──
+$(PY_BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(PY_BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -fPIC -c $< -o $@
+
+$(PY_BUILD_DIR)/%.o: $(SRC_DIR)/%.cu | $(PY_BUILD_DIR)
+	$(NVCC) $(NVCCFLAGS) -Xcompiler -fPIC -c $< -o $@
+
+$(PY_MODULE): $(PYTHON_DIR)/bindings.cu $(PY_ALL_OBJS) | $(PY_BUILD_DIR)
+	$(NVCC) $(NVCCFLAGS) -shared -Xcompiler -fPIC $(PYBIND_FLAGS) $^ -o $@ $(LDFLAGS)
+
 # ══════════════════════════════════════════════════════════════
-# Executables
+# Targets
 # ══════════════════════════════════════════════════════════════
 
-$(BUILD_DIR)/new_test: $(TEST_DIR)/new_test.cpp $(ALL_OBJS) | $(BUILD_DIR)
-	$(NVCC) $(NVCCFLAGS) $^ -o $@ $(LDFLAGS)
+python: $(PY_MODULE)
+	@cp -f $(PY_MODULE) $(PY_MODULE_LINK)
+	@echo "→ $(PY_MODULE_LINK)"
 
 $(BUILD_DIR)/general_test: $(TEST_DIR)/general_test.cpp $(ALL_OBJS) | $(BUILD_DIR)
 	$(NVCC) $(NVCCFLAGS) $^ -o $@ $(LDFLAGS)
@@ -74,88 +112,27 @@ $(BUILD_DIR)/memory_leak_test: $(TEST_DIR)/memory_leak_test.cpp $(ALL_OBJS) | $(
 $(BUILD_DIR)/mnist_test: $(TEST_DIR)/mnist_test.cpp $(ALL_OBJS) | $(BUILD_DIR)
 	$(NVCC) $(NVCCFLAGS) $^ -o $@ $(LDFLAGS)
 
-# ══════════════════════════════════════════════════════════════
-# Convenience targets
-# ══════════════════════════════════════════════════════════════
+$(BUILD_DIR)/new_test: $(TEST_DIR)/new_test.cpp $(ALL_OBJS) | $(BUILD_DIR)
+	$(NVCC) $(NVCCFLAGS) $^ -o $@ $(LDFLAGS)
 
-new_test:			$(BUILD_DIR)/new_test
-general_test:		$(BUILD_DIR)/general_test
-memory_leak_test:	$(BUILD_DIR)/memory_leak_test
-mnist_test:			$(BUILD_DIR)/mnist_test
+general_test:      $(BUILD_DIR)/general_test
+memory_leak_test:  $(BUILD_DIR)/memory_leak_test
+mnist_test:        $(BUILD_DIR)/mnist_test
+new_test:          $(BUILD_DIR)/new_test
 
-run_new_test: new_test
-	./$(BUILD_DIR)/new_test
+run_gen_test:      general_test; ./$(BUILD_DIR)/general_test
+run_mem_leak_test: memory_leak_test; ./$(BUILD_DIR)/memory_leak_test
+run_mnist_test:    mnist_test; ./$(BUILD_DIR)/mnist_test
+run_new_test:      new_test; ./$(BUILD_DIR)/new_test
 
-run_gen_test: general_test
-	./$(BUILD_DIR)/general_test
-
-run_mem_leak_test: memory_leak_test
-	./$(BUILD_DIR)/memory_leak_test
-
-run_mnist_test: mnist_test
-	./$(BUILD_DIR)/mnist_test
-
-# ══════════════════════════════════════════════════════════════
-# Python
-# ══════════════════════════════════════════════════════════════
-
-# ── Python-specific objects (compiled with -fPIC) ──
-PY_BUILD_DIR 	:= build/python
-PYTHON_DIR		:= python
-
-$(PY_BUILD_DIR):
-	mkdir -p $(PY_BUILD_DIR)
-
-# Python needs these sources (no tensor.cu/bobr.cu — those have main())
-PY_CPP_SRCS :=  $(SRC_DIR)/nodes.cpp \
-                $(SRC_DIR)/utils.cpp \
-				$(SRC_DIR)/graph_viz.cpp \
-                $(SRC_DIR)/evaluate.cpp \
-				$(SRC_DIR)/shape_data.cpp
-                
-PY_CU_SRCS  := $(SRC_DIR)/allocator.cu \
-               $(SRC_DIR)/module.cu \
-               $(SRC_DIR)/kernels.cu \
-			   $(SRC_DIR)/optim.cu \
-			   $(SRC_DIR)/primitives.cu \
-			   $(SRC_DIR)/fusion_reactor.cu
-
-PY_CPP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(PY_BUILD_DIR)/%.o,$(PY_CPP_SRCS))
-PY_CU_OBJS  := $(patsubst $(SRC_DIR)/%.cu,$(PY_BUILD_DIR)/%.o,$(PY_CU_SRCS))
-PY_ALL_OBJS := $(PY_CPP_OBJS) $(PY_CU_OBJS)
-
-PYBIND_FLAGS := $(shell python3 -m pybind11 --includes)
-PYTHON_SUFFIX := $(shell python3-config --extension-suffix)
-
-# Pattern rules for python objects — same as normal but with -fPIC
-$(PY_BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(PY_BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -fPIC -c $< -o $@
-
-$(PY_BUILD_DIR)/%.o: $(SRC_DIR)/%.cu | $(PY_BUILD_DIR)
-	$(NVCC) $(NVCCFLAGS) -Xcompiler -fPIC -c $< -o $@
-
-# Python shared library
-$(PY_BUILD_DIR)/bobr$(PYTHON_SUFFIX): $(PYTHON_DIR)/bindings.cu $(PY_ALL_OBJS) | $(PY_BUILD_DIR)
-	$(NVCC) $(NVCCFLAGS) -shared -Xcompiler -fPIC $(PYBIND_FLAGS) $^ -o $@ $(LDFLAGS)
-
-python: $(PY_BUILD_DIR)/bobr$(PYTHON_SUFFIX)
-	rm -f $(PYTHON_DIR)/bobr$(PYTHON_SUFFIX)
-	cp $(PY_BUILD_DIR)/bobr$(PYTHON_SUFFIX) $(PYTHON_DIR)/bobr$(PYTHON_SUFFIX)
-
-# ══════════════════════════════════════════════════════════════
-# clean & phony
-# ══════════════════════════════════════════════════════════════
+# Print a resolved variable, e.g. make -s print-CUDA_HOME (used by scripts/lib/cuda-env.sh)
+print-%:
+	@echo '$($*)'
 
 clean:
-	rm -rf $(BUILD_DIR)
-	rm -rf $(OUT_DIR)
+	rm -rf $(BUILD_DIR) $(OUT_DIR)
+	rm -f $(PY_MODULE_LINK)
 
-clean_allocator:
-	rm -rf $(BUILD_DIR)/allocator.o
-
-# .PHONY tells make these aren't real files
-.PHONY: clean new_test general_test \
-        run_new_test run_gen_test \
-        memory_leak_test run_mem_leak_test \
-        mnist_test run_mnist_test \
-		python
+# ══════════════════════════════════════════════════════════════
+.PHONY: python clean general_test memory_leak_test mnist_test new_test \
+        run_gen_test run_mem_leak_test run_mnist_test run_new_test

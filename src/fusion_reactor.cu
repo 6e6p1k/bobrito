@@ -13,7 +13,10 @@
     if (r != CUDA_SUCCESS) { const char* m; cuGetErrorString(r, &m); std::cerr << "CU err @" << __LINE__ << ": " << m << "\n"; std::exit(1); } } while(0)
 #define CUDA_CHECK(x) do { cudaError_t r = (x); \
     if (r != cudaSuccess) { std::cerr << "CUDA err @" << __LINE__ << ": " << cudaGetErrorString(r) << "\n"; std::exit(1); } } while(0)
-#define PATH "-I/home/hz/nothing/bobr-framework-cuda/src/"
+#ifndef BOBR_SRC_DIR
+#define BOBR_SRC_DIR "src"
+#endif
+#define NVRTC_INCLUDE_PATH "-I" BOBR_SRC_DIR
 
 // Dispatches fusion ops
 // Handles nvrtc workflow
@@ -85,7 +88,10 @@ void FusionReactor::update_cache(std::string kernel_code, Compiled comp) {
 }
 
 nvrtcProgram FusionReactor::make_compile_prog(std::string kernel_code, char* name) {
-    static const char* opts[] = {"--gpu-architecture=sm_120", PATH, "-std=c++17"};
+#ifndef NVRTC_ARCH_FLAG
+#define NVRTC_ARCH_FLAG "--gpu-architecture=sm_120"
+#endif
+    static const char* opts[] = {NVRTC_ARCH_FLAG, NVRTC_INCLUDE_PATH, "-std=c++17"};
     nvrtcProgram prog;
     NVRTC_CHECK(
         nvrtcCreateProgram(

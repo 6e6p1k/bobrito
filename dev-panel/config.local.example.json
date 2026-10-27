@@ -1,0 +1,11 @@
+{
+  "projectRoot": "../",
+  "gpuArch": "sm_120",
+  "makefile": "Makefile",
+  "remote": {
+    "enabled": false,
+    "host": "",
+    "user": "",
+    "projectPath": ""
+  }
+}

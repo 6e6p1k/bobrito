@@ -1,5 +1,5 @@
 import numpy as np
-import bobr
+import bobrito as bobr
 from keras.datasets import mnist
 import gc
 

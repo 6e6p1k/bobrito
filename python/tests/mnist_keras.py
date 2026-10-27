@@ -4,7 +4,7 @@ Compares the old manual parameter style with the new Linear/Sequential.
 """
 import sys
 sys.path.insert(0, 'python')
-import bobr
+import bobrito as bobr
 import numpy as np
 import keras
 

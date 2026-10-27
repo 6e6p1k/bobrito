@@ -2,8 +2,7 @@ import sys
 sys.path.insert(0, 'python')
 
 import numpy as np 
-import bobr
-
+import bobrito as bobr
 a = bobr.arange(0, 30).reshape([3, 10])
 a.eval()
 

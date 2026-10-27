@@ -63,13 +63,15 @@ Grid* Grid::init(int max_blocks_num, int size_per_block)
         for (int i = 0; i < max_blocks_num - 1; i++) {
             raw[i].next_free = &raw[i+1];
             raw[i].size = size_per_block;
-            raw[i].allocate_block();
+            if (raw[i].allocate_block() != OutStatus::Success)
+                throw std::runtime_error("Grid::init: cudaMalloc failed for a " + std::to_string(size_per_block) + "-byte block");
             raw[i].mom = grid;
         }
         // set the last one
         raw[max_blocks_num-1].next_free = nullptr;
         raw[max_blocks_num-1].size = size_per_block;
-        raw[max_blocks_num-1].allocate_block();
+        if (raw[max_blocks_num-1].allocate_block() != OutStatus::Success)
+            throw std::runtime_error("Grid::init: cudaMalloc failed for a " + std::to_string(size_per_block) + "-byte block");
         raw[max_blocks_num-1].mom = grid;
         // set next free to the first block
         grid->next_free_block = &raw[0];
@@ -157,16 +159,17 @@ void MemoryPool::free(Block* b_ptr)
 OutStatus MemoryPool::reset(void) 
 {
     // Resets all allocations and allocates new starting pack of grids. 
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < NUM_TIERS; ++i)
     {
-        if (grids[i]->free_grid() != OutStatus::Success) return OutStatus::Error;
-        grids[i] = Grid::init(BLOCKS_PER_TIER[i], TIER_SIZES[i]);
+        if (grids[i] && grids[i]->free_grid() != OutStatus::Success) return OutStatus::Error;
+        grids[i] = i < EAGER_TIERS ? Grid::init(BLOCKS_PER_TIER[i], TIER_SIZES[i]) : nullptr;
     }
     return OutStatus::Success;
 }
 
 void MemoryPool::allocate(Block** dst, size_t bytes) {
     int tier = pick_grid_tier(bytes);
+    if (grids[tier] == nullptr) grids[tier] = Grid::init(BLOCKS_PER_TIER[tier], TIER_SIZES[tier]);
     Grid* grid = grids[tier];
     while (grid != nullptr)
     {
@@ -211,7 +214,10 @@ int MemoryPool::pick_grid_tier(size_t bytes)
     if (bytes <= TINY_BLOCK)   return 1;
     if (bytes <= SMALL_BLOCK)  return 2;
     if (bytes <= MEDIUM_BLOCK) return 3;
-    return 4;
+    if (bytes <= LARGE_BLOCK)  return 4;
+    if (bytes <= ULTRA_LARGE_BLOCK) return 5;
+    throw std::length_error("MemoryPool: " + std::to_string(bytes) + " bytes requested, the largest block is "
+                            + std::to_string(ULTRA_LARGE_BLOCK) + " bytes");
 }
 
 Grid* MemoryPool::make_connect_grid(int tier)
@@ -337,6 +343,7 @@ void ContentData::h_to_d(float* h_data, int size)
     {
         MemoryPool::call().allocate(&b_ptr, bytes);
     }
+    if (bytes > b_ptr->size) throw std::length_error("h_to_d: " + std::to_string(bytes) + " bytes do not fit a " + std::to_string(b_ptr->size) + "-byte block");
     gpuErrchk( cudaMemcpy(b_ptr->d_ptr, h_data, bytes, cudaMemcpyHostToDevice) );
 }
 
@@ -347,6 +354,7 @@ void ContentData::d_to_d(float* d_data, int size)
     {
         MemoryPool::call().allocate(&b_ptr, bytes);
     }
+    if (bytes > b_ptr->size) throw std::length_error("d_to_d: " + std::to_string(bytes) + " bytes do not fit a " + std::to_string(b_ptr->size) + "-byte block");
     gpuErrchk( cudaMemcpy(b_ptr->d_ptr, d_data, bytes, cudaMemcpyDeviceToDevice) );
 }
 

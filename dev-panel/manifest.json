@@ -1,0 +1,139 @@
+{
+  "version": 2,
+  "groups": [
+    {
+      "id": "setup",
+      "label": "Setup",
+      "description": "First-time setup and health checks",
+      "actions": [
+        {
+          "id": "install-cuda",
+          "label": "Install CUDA deps",
+          "description": "cuBLAS, cuRAND, NVRTC, CUB — apt on Ubuntu/WSL",
+          "bobr": ["install-cuda"]
+        },
+        {
+          "id": "install-cuda-check",
+          "label": "Check CUDA deps",
+          "bobr": ["install-cuda", "--check"]
+        },
+        {
+          "id": "install",
+          "label": "Install dependencies",
+          "description": "pip + npm dev deps, create config.mk if missing",
+          "bobr": ["install"]
+        },
+        {
+          "id": "configure-cuda",
+          "label": "Configure CUDA paths",
+          "description": "Auto-detect CUDA_HOME / CUDA_LIB_DIR (apt vs /usr/local/cuda)",
+          "bobr": ["configure-cuda"]
+        },
+        {
+          "id": "configure",
+          "label": "Configure IDE (clangd)",
+          "description": "Generate compile_commands.json",
+          "bobr": ["configure"]
+        },
+        {
+          "id": "doctor",
+          "label": "Doctor",
+          "description": "CUDA, import bobr, stale build check",
+          "bobr": ["doctor"]
+        }
+      ]
+    },
+    {
+      "id": "build",
+      "label": "Build",
+      "description": "Compile C++/CUDA — always relink python after .cu changes",
+      "actions": [
+        {
+          "id": "build-python",
+          "label": "Rebuild Python lib",
+          "description": "Full extension build + copy to python/",
+          "bobr": ["build", "python"]
+        },
+        {
+          "id": "build-allocator",
+          "label": "allocator.cu",
+          "bobr": ["build", "allocator"]
+        },
+        {
+          "id": "build-primitives",
+          "label": "primitives.cu",
+          "bobr": ["build", "primitives"]
+        },
+        {
+          "id": "build-kernels",
+          "label": "kernels.cu",
+          "bobr": ["build", "kernels"]
+        },
+        {
+          "id": "build-clean",
+          "label": "Clean all",
+          "bobr": ["build", "clean"],
+          "variant": "destructive"
+        }
+      ]
+    },
+    {
+      "id": "test",
+      "label": "Tests",
+      "description": "Official suites — see docs/DEV.md",
+      "actions": [
+        {
+          "id": "test-smoke",
+          "label": "Smoke tests",
+          "description": "ops vs torch + shapes",
+          "bobr": ["test", "smoke"]
+        },
+        {
+          "id": "test-full",
+          "label": "Full tests",
+          "description": "smoke + gradients + advanced + general_test",
+          "bobr": ["test", "full"]
+        }
+      ]
+    },
+    {
+      "id": "cpp-tests",
+      "label": "C++ (legacy)",
+      "description": "Individual Makefile test targets",
+      "actions": [
+        {
+          "id": "run-general-test",
+          "label": "general_test",
+          "bobr": ["make", "run_gen_test"]
+        },
+        {
+          "id": "run-mem-leak-test",
+          "label": "memory_leak_test",
+          "bobr": ["make", "run_mem_leak_test"]
+        }
+      ]
+    },
+    {
+      "id": "debug",
+      "label": "Debug scripts",
+      "description": "Ad-hoc scripts — not in official test suite",
+      "actions": [
+        {
+          "id": "debug-loss",
+          "label": "debug_loss.py",
+          "bobr": ["run-script", "debug_loss.py"]
+        },
+        {
+          "id": "nvidia-smi",
+          "label": "nvidia-smi",
+          "bobr": ["exec", "nvidia-smi"]
+        },
+        {
+          "id": "nvcc-version",
+          "label": "nvcc --version",
+          "bobr": ["exec", "nvcc", "--version"]
+        }
+      ]
+    }
+  ]
+}

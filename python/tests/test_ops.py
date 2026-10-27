@@ -1,8 +1,7 @@
 import sys
 sys.path.insert(0, 'python')
 import numpy as np
-import bobr
-
+import bobrito as bobr
 shape = [4, 3]
 
 a = np.random.rand(*shape)

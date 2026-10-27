@@ -7,9 +7,7 @@ sys.path.insert(0, 'python')
 
 import numpy as np
 import torch
-import bobr
-
-
+import bobrito as bobr
 class ReshapeTest:
     """Test reshape operations."""
     

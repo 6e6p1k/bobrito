@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# bobr — single entry point for humans, agents, and the dev panel UI.
+# Every subcommand maps to a script or make target. See docs/CLI.md.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+
+usage() {
+  cat <<'EOF'
+bobr — bobr-framework-cuda dev CLI
+
+Usage:
+  ./bobr install              Create .venv: torch, pybind11, CUDA 13 toolkit
+  ./bobr install-cuda         CUDA 13 toolkit (pip wheels) into .venv/cuda
+  ./bobr install-cuda --check Verify CUDA libraries only
+  ./bobr configure            Generate compile_commands.json for clangd
+  ./bobr configure-cuda       Use the .venv toolkit (--system: /usr/local/cuda)
+  ./bobr doctor [--json]      Health check (CUDA, Python, .so, IDE db)
+  ./bobr build [target]       Build targets (default: python)
+  ./bobr test [smoke|full]    Run official test suites
+  ./bobr ui                   Start web dev panel (WSL / remote GPU host)
+  ./bobr help
+
+Examples:
+  ./bobr build python
+  ./bobr build primitives     # recompile one translation unit
+  ./bobr test smoke
+  ./bobr doctor --json
+
+Agents: call these commands directly — same as the dev panel buttons.
+EOF
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  install)   exec "$ROOT/scripts/setup.sh" "$@" ;;
+  install-cuda) exec "$ROOT/scripts/install-cuda-deps.sh" "$@" ;;
+  configure) exec "$ROOT/scripts/configure.sh" "$@" ;;
+  configure-cuda) exec "$ROOT/scripts/configure-cuda.sh" "$@" ;;
+  doctor)    exec "$ROOT/scripts/doctor.sh" "$@" ;;
+  build)     exec "$ROOT/scripts/build.sh" "$@" ;;
+  test)      exec "$ROOT/scripts/test.sh" "$@" ;;
+  ui)        exec "$ROOT/scripts/ui.sh" "$@" ;;
+  make)      shift; exec make "$@" ;;
+  run-script)
+    script="${1:?script path}"
+    shift
+    export PYTHONPATH="${ROOT}/python:${ROOT}:${PYTHONPATH:-}"
+    exec "${PYTHON:-$(make -s --no-print-directory -C "$ROOT" print-PYTHON)}" "$ROOT/$script" "$@"
+    ;;
+  exec)
+    shift
+    exec "$@"
+    ;;
+  help|-h|--help) usage ;;
+  *)
+    echo "Unknown command: $cmd" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

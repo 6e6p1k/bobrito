@@ -1,4 +1,4 @@
-import bobr
+import bobrito as bobr
 import torch
 import time
 

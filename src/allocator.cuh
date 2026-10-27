@@ -80,14 +80,17 @@ private:
     Grid* make_connect_grid(int tier);
 
     // private variables
-    Grid* grids[5];
+    Grid* grids[6] = {};   // tier 5 (ULTRA) is created on first use
     static constexpr size_t MICRO_BLOCK  = 64;       // 64B
     static constexpr size_t TINY_BLOCK   = 1 << 10;  // 1KB
     static constexpr size_t SMALL_BLOCK  = 1 << 16;  // 64KB
     static constexpr size_t MEDIUM_BLOCK = 1 << 20;  // 1MB
     static constexpr size_t LARGE_BLOCK  = 1 << 24;  // 16MB
-    static constexpr size_t TIER_SIZES[5] = {64, 1<<10, 1<<16, 1<<20, 1<<24};
-    static constexpr int BLOCKS_PER_TIER[5] = {64, 256, 128, 64, 32};
+    static constexpr size_t ULTRA_LARGE_BLOCK = 1 << 28;  // 256MB, lazy
+    static constexpr int NUM_TIERS   = 6;
+    static constexpr int EAGER_TIERS = 5;  // tiers allocated up front
+    static constexpr size_t TIER_SIZES[6] = {64, 1<<10, 1<<16, 1<<20, 1<<24, 1<<28};
+    static constexpr int BLOCKS_PER_TIER[6] = {64, 256, 128, 64, 32, 2};
 };
 
 // ===============    MEMORY UTILITIES   ==================

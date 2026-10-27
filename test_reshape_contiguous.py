@@ -1,7 +1,7 @@
 import sys
 sys.path.insert(0, 'python')
 
-import bobr
+import bobrito as bobr
 import torch
 import numpy as np
 

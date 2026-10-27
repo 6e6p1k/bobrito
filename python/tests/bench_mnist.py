@@ -16,7 +16,7 @@ import sys, time
 sys.path.insert(0, 'python')
 import numpy as np
 import torch
-import bobr
+import bobrito as bobr
 torch.set_float32_matmul_precision('high')  # enables TF32
 
 # ─── Data ──────────────────────────────────────────────────────────────

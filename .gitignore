@@ -4,7 +4,14 @@
 *.gz
 
 # VS Code
-.vscode/
+.vscode/*
+!.vscode/settings.json
+
+# Machine-local build config
+config.mk
+
+# Python extension (build per machine / Python version)
+python/bobr*.so
 
 # imgs
 *.dot
@@ -56,6 +63,9 @@
 build/
 Build/
 build-*/
+dev-panel/node_modules/
+dev-panel/dist/
+dev-panel/src-tauri/target/
 
 # CMake generated files
 CMakeFiles/
@@ -86,3 +96,8 @@ out/
 
 # legacy code
 legacy/
+# Local virtualenv
+.venv/
+
+# Scratch notes
+tmp.md

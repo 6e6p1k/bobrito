@@ -1,0 +1,26 @@
+# Copy to config.mk and edit for your machine (config.mk is gitignored).
+#   cp config.mk.example config.mk        (./bobr install does this for you)
+#
+# Everything defaults to the repo-local virtualenv that ./bobr install creates:
+# Python, pybind11, torch and the CUDA toolkit (NVIDIA's pip wheels) all live in .venv.
+# Override a line in config.mk only to use something else, e.g. a system CUDA toolkit.
+# Check what make resolves with: make -s print-CUDA_HOME (or print-PYTHON, print-CUDA_LIB_DIR)
+
+# GPU compute capability (nvcc -arch). Examples: sm_86, sm_89, sm_120
+GPU_ARCH ?= sm_120
+
+# Repo-local virtualenv
+VENV ?= $(CURDIR)/.venv
+
+# Python used for the pybind11 extension build and the tests
+PYTHON ?= $(VENV)/bin/python
+
+# CUDA toolkit root (bin/nvcc, include/, lib64/).
+# Default: $(VENV)/cuda, assembled by ./bobr install-cuda from NVIDIA's CUDA 13 pip wheels.
+# System toolkit instead: /usr/local/cuda (NVIDIA installer); ./bobr configure-cuda --system detects it.
+# Note: Ubuntu's apt nvidia-cuda-toolkit (12.0) cannot target RTX 50xx (sm_120).
+CUDA_HOME ?= $(VENV)/cuda
+
+# Library directory (libcudart, libcublas, libnvrtc, libcurand); also baked into the
+# extension's rpath, so import bobrito needs no LD_LIBRARY_PATH.
+CUDA_LIB_DIR ?= $(CUDA_HOME)/lib64

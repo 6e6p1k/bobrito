@@ -1,4 +1,4 @@
-import bobr
+import bobrito as bobr
 import torch 
 from torch.nn import functional as F
 import numpy as np

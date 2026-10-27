@@ -20,8 +20,7 @@ sys.path.insert(0, 'python')
 
 import numpy as np
 import torch
-import bobr
-
+import bobrito as bobr
 np.random.seed(42)
 torch.manual_seed(42)
 
