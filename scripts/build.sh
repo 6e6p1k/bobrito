@@ -37,14 +37,16 @@ case "$TARGET" in
   clean)
     make clean
     ;;
-  allocator|primitives|kernels|evaluate|module|optim|fusion_reactor|nodes|utils|shape_data|graph_viz)
-    # Single translation unit; the python module still needs relinking
-    make "build/python/${TARGET}.o"
-    echo ""
-    echo "Note: .o rebuilt. For Python to pick up changes, also run: ./bobr build python"
-    ;;
   *)
-    # Pass through to make (e.g. build/python/allocator.o)
-    make "$TARGET"
+    # One of the extension's sources (PY_CU_SRCS / PY_CPP_SRCS in the Makefile): rebuild just its .o
+    srcs=" $(make -s --no-print-directory print-PY_CU_SRCS print-PY_CPP_SRCS | tr '\n' ' ') "
+    if [[ "$srcs" == *" src/${TARGET}.cu "* || "$srcs" == *" src/${TARGET}.cpp "* ]]; then
+      make "build/python/${TARGET}.o"
+      echo ""
+      echo "Note: .o rebuilt. For Python to pick up changes, also run: ./bobr build python"
+    else
+      # Pass through to make (e.g. build/python/allocator.o)
+      make "$TARGET"
+    fi
     ;;
 esac

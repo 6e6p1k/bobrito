@@ -1,44 +1,62 @@
-export function DocsPage() {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-base font-semibold">Pipeline docs</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Build flow and getting started checklist.
-        </p>
-      </div>
+import { PageHeader } from "@/components/ActionList";
+import { PAGES } from "@/lib/pages";
 
-      <div className="rounded-lg border border-border bg-card p-6 text-sm">
-        <h3 className="text-base font-medium text-foreground">Build pipeline</h3>
-        <pre className="mt-3 text-xs text-muted-foreground">{`src/*.cu / *.cpp / headers
-  ↓  make (-MMD tracks header deps)
+const PIPELINE = `src/*.cu · *.cpp · headers
+  ↓  make  (-MMD tracks header deps)
 build/python/*.o
   ↓  nvcc -shared
-python/bobr.cpython-*.so  ← import bobr`}</pre>
+python/bobrito.cpython-*.so   ← import bobrito`;
 
-        <h3 className="mt-6 text-base font-medium text-foreground">Clone checklist</h3>
-        <ol className="mt-3 list-decimal space-y-1 pl-5 text-muted-foreground">
-          <li>
-            <code>./bobr install</code>
-          </li>
-          <li>
-            <code>cp config.mk.example config.mk</code> — set GPU_ARCH
-          </li>
-          <li>
-            <code>./bobr configure</code> — clangd / Cursor
-          </li>
-          <li>
-            <code>./bobr build python</code>
-          </li>
-          <li>
-            <code>./bobr doctor</code>
-          </li>
-        </ol>
+const CHECKLIST = [
+  { command: "./bobr install", note: "creates .venv with torch, pybind11 and the CUDA 13 toolkit, and config.mk" },
+  { command: "./bobr doctor", note: "if GPU_ARCH is wrong for your card, it suggests the value to put in config.mk" },
+  { command: "./bobr build python", note: "builds the extension and copies it into python/" },
+  { command: "./bobr test smoke", note: "gradient checks against torch" },
+  { command: "./bobr configure", note: "optional: compile_commands.json for clangd" },
+];
 
-        <p className="mt-4 text-muted-foreground">
-          See <code>docs/CLI.md</code> and <code>docs/DEV.md</code> in the repo.
+export function DocsPage() {
+  const page = PAGES.find((p) => p.to === "/docs")!;
+
+  return (
+    <div className="flex max-w-3xl flex-col gap-7 px-8 py-7">
+      <PageHeader title={page.label} description={page.description} />
+
+      <section aria-labelledby="pipeline-title" className="flex flex-col gap-2.5">
+        <h2 id="pipeline-title" className="text-[15px] font-semibold">
+          Build pipeline
+        </h2>
+        <pre className="overflow-x-auto rounded-lg border bg-muted/40 px-4 py-3.5 font-mono text-xs leading-relaxed">
+          {PIPELINE}
+        </pre>
+        <p className="text-sm text-muted-foreground">
+          Rebuilding a single <code className="font-mono text-foreground">.o</code> doesn't reach Python until the
+          extension is relinked with <code className="font-mono text-foreground">./bobr build python</code>.
         </p>
-      </div>
+      </section>
+
+      <section aria-labelledby="clone-title" className="flex flex-col gap-2.5">
+        <h2 id="clone-title" className="text-[15px] font-semibold">
+          Fresh clone
+        </h2>
+        <ol className="divide-y overflow-hidden rounded-lg border">
+          {CHECKLIST.map((step, i) => (
+            <li key={step.command} className="flex items-baseline gap-3 px-4 py-3">
+              <span className="w-4 shrink-0 text-sm text-muted-foreground">{i + 1}</span>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <code className="font-mono text-[13px]">{step.command}</code>
+                <span className="text-sm text-muted-foreground">{step.note}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <p className="text-sm text-muted-foreground">
+        More in <code className="font-mono text-foreground">docs/CLI.md</code> and{" "}
+        <code className="font-mono text-foreground">docs/DEV.md</code>. Agents use the same{" "}
+        <code className="font-mono text-foreground">./bobr</code> commands directly; the panel is optional.
+      </p>
     </div>
   );
 }

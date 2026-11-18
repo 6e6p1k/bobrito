@@ -20,14 +20,21 @@ export type Manifest = {
 
 export type PanelConfig = {
   projectRoot: string;
+  branch: string | null;
+  platform: string;
   gpuArch: string;
   manifestPath: string;
   configPath: string;
   devPanelRoot: string;
 };
 
+export type DoctorCheck = { id: string; level: string; message: string; ok: boolean };
+
 export type SystemInfo = {
-  checks: { id: string; level: string; message: string; ok: boolean }[];
+  checks: DoctorCheck[];
+  // Set when doctor's output couldn't be parsed
+  raw?: string;
+  exitCode: number | null;
 };
 
 export type LogLine = {
@@ -39,4 +46,5 @@ export type RunResult = {
   exitCode: number;
   durationMs: number;
   actionId: string;
+  stopped: boolean;
 };

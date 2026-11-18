@@ -1,12 +1,11 @@
 import { AppShell } from "@/components/AppShell";
-import { DevPanelProvider } from "@/context/DevPanelContext";
-import { BuildPage } from "@/pages/BuildPage";
-import { DocsPage } from "@/pages/DocsPage";
-import { HomePage } from "@/pages/HomePage";
-import { SetupPage } from "@/pages/SetupPage";
-import { TestsPage } from "@/pages/TestsPage";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Route, Routes } from "react-router-dom";
+import { DevPanelProvider } from "@/context/DevPanelContext";
+import { PAGES } from "@/lib/pages";
+import { ActionsPage } from "@/pages/ActionsPage";
+import { DocsPage } from "@/pages/DocsPage";
+import { OverviewPage } from "@/pages/OverviewPage";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 function App() {
   return (
@@ -14,11 +13,12 @@ function App() {
       <DevPanelProvider>
         <Routes>
           <Route element={<AppShell />}>
-            <Route index element={<HomePage />} />
-            <Route path="setup" element={<SetupPage />} />
-            <Route path="build" element={<BuildPage />} />
-            <Route path="tests" element={<TestsPage />} />
+            <Route index element={<OverviewPage />} />
+            {PAGES.filter((p) => p.groupIds.length).map((page) => (
+              <Route key={page.to} path={page.to.slice(1)} element={<ActionsPage page={page} />} />
+            ))}
             <Route path="docs" element={<DocsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </DevPanelProvider>

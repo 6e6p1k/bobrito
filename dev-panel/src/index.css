@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @theme inline {
   --color-background: var(--background);
@@ -27,7 +28,12 @@
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
   --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", sans-serif;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -52,7 +58,6 @@
   }
   body {
     @apply antialiased bg-background text-foreground;
-    font-family: ui-sans-serif, system-ui, sans-serif;
   }
   html {
     @apply font-sans;
@@ -60,13 +65,13 @@
 }
 
 :root {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.45 0.12 145);
+  --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -77,7 +82,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.45 0.12 145);
+  --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -86,10 +91,16 @@
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.45 0.12 145);
+  --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.96 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.45 0.12 145);
+  --sidebar-ring: oklch(0.708 0 0);
+  /* Status text colors, each >= 4.5:1 on white */
+  --success: oklch(0.527 0.154 150.069);
+  --warning: oklch(0.555 0.163 48.998);
+  /* Logo mark */
+  --brand: oklch(0.527 0.154 150.069);
+  --brand-foreground: oklch(1 0 0);
 }

@@ -1,4 +1,4 @@
-import type { Action, ActionGroup, LogLine, Manifest, PanelConfig, RunResult } from "@/types";
+import type { Action, ActionGroup, LogLine, Manifest, PanelConfig, RunResult, SystemInfo } from "@/types";
 
 const API = "/api";
 
@@ -14,10 +14,17 @@ export async function fetchConfig(): Promise<PanelConfig> {
   return res.json();
 }
 
-export async function fetchSystemChecks(): Promise<{ checks: { id: string; level: string; message: string; ok: boolean }[] }> {
+export async function fetchSystemChecks(): Promise<SystemInfo> {
   const res = await fetch(`${API}/system`);
-  if (!res.ok) throw new Error(`system: ${res.status}`);
+  if (!res.ok && res.status !== 500) throw new Error(`system: ${res.status}`);
+  // A 500 still carries { checks: [], raw } describing why doctor couldn't run
   return res.json();
+}
+
+export async function stopAction(): Promise<void> {
+  const res = await fetch(`${API}/stop`, { method: "POST" });
+  // 409 = it already finished; nothing to do
+  if (!res.ok && res.status !== 409) throw new Error(`stop: ${res.status}`);
 }
 
 export async function runAction(
@@ -40,7 +47,7 @@ export async function runAction(
 
   const decoder = new TextDecoder();
   let buffer = "";
-  let result: RunResult = { exitCode: -1, durationMs: 0, actionId };
+  let result: RunResult | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -51,17 +58,25 @@ export async function runAction(
     for (const part of parts) {
       const line = part.trim();
       if (!line.startsWith("data: ")) continue;
-      const payload = JSON.parse(line.slice(6)) as LogLine & Partial<RunResult> & { done?: boolean };
-      onLine({ stream: payload.stream as LogLine["stream"], line: payload.line });
+      let payload: LogLine & Partial<RunResult> & { done?: boolean };
+      try {
+        payload = JSON.parse(line.slice(6));
+      } catch {
+        onLine({ stream: "stderr", line: `[panel] unparseable event: ${line.slice(6, 200)}` });
+        continue;
+      }
+      onLine({ stream: payload.stream, line: payload.line });
       if (payload.done) {
         result = {
           exitCode: payload.exitCode ?? -1,
           durationMs: payload.durationMs ?? 0,
           actionId: payload.actionId ?? actionId,
+          stopped: payload.stopped ?? false,
         };
       }
     }
   }
+  if (!result) throw new Error("Connection to the panel API dropped before the action finished");
   return result;
 }
 

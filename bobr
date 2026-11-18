@@ -18,6 +18,7 @@ Usage:
   ./bobr configure-cuda       Use the .venv toolkit (--system: /usr/local/cuda)
   ./bobr doctor [--json]      Health check (CUDA, Python, .so, IDE db)
   ./bobr build [target]       Build targets (default: python)
+  ./bobr clean                Remove the python build
   ./bobr test [smoke|full]    Run official test suites
   ./bobr ui                   Start web dev panel (WSL / remote GPU host)
   ./bobr help
@@ -41,10 +42,11 @@ case "$cmd" in
   configure) exec "$ROOT/scripts/configure.sh" "$@" ;;
   configure-cuda) exec "$ROOT/scripts/configure-cuda.sh" "$@" ;;
   doctor)    exec "$ROOT/scripts/doctor.sh" "$@" ;;
-  build)     exec "$ROOT/scripts/build.sh" "$@" ;;
-  test)      exec "$ROOT/scripts/test.sh" "$@" ;;
-  ui)        exec "$ROOT/scripts/ui.sh" "$@" ;;
-  make)      shift; exec make "$@" ;;
+  build)     exec "$ROOT/scripts/build.sh"  "$@" ;;
+  clean)     exec "$ROOT/scripts/build.sh" clean ;;
+  test)      exec "$ROOT/scripts/test.sh"   "$@" ;;
+  ui)        exec "$ROOT/scripts/ui.sh"     "$@" ;;
+  make)      exec make "$@" ;;
   run-script)
     script="${1:?script path}"
     shift
@@ -52,7 +54,6 @@ case "$cmd" in
     exec "${PYTHON:-$(make -s --no-print-directory -C "$ROOT" print-PYTHON)}" "$ROOT/$script" "$@"
     ;;
   exec)
-    shift
     exec "$@"
     ;;
   help|-h|--help) usage ;;
