@@ -6,18 +6,18 @@ CUDA Graphs).
 Trains the same 784-128-64-10 MLP with AdamW in each framework and prints
 per-epoch progress plus a summary table (test accuracy, train time, speed).
 
-Fairness (same as bench_mnist.py):
+Fairness (same as legacy/bench_mnist.py):
   - All data pre-loaded to GPU once, before timing starts.
   - Warmup iterations before every timed region.
   - No syncs inside an epoch; one sync at the end of each epoch.
   - Test-accuracy evaluation runs outside the timed region.
 
 Run from the repo root:
-    .venv/bin/python python/tests/mnist_compare.py
-    .venv/bin/python python/tests/mnist_compare.py --epochs 20 --no-compile
+    .venv/bin/python python/bench/mnist.py
+    .venv/bin/python python/bench/mnist.py --epochs 20 --no-compile
 """
 
-import argparse, os, sys, time
+import argparse, hashlib, os, sys, time, urllib.request
 sys.path.insert(0, 'python')
 import numpy as np
 import torch
@@ -30,15 +30,42 @@ parser.add_argument('--batch', type=int, default=64)
 parser.add_argument('--lr', type=float, default=1e-3)
 parser.add_argument('--warmup', type=int, default=20)
 parser.add_argument('--no-compile', action='store_true', help='skip both torch.compile modes')
-parser.add_argument('--data', default=os.path.expanduser('~/.keras/datasets/mnist.npz'))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+parser.add_argument('--data', default=os.path.join(REPO_ROOT, 'data', 'mnist.npz'),
+                    help='path to mnist.npz; downloaded there if missing')
 args = parser.parse_args()
 
 
 # ─── Data ──────────────────────────────────────────────────────────────
 
+# Same file keras.datasets.mnist uses (and the same SHA-256 it pins), fetched without keras.
+MNIST_URL    = 'https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz'
+MNIST_SHA256 = '731c5ac602752760c8e48fbffcf8c3b850d9dc2a2aedcf2cc48468fc17b673d1'
+
+def sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+def ensure_mnist(path):
+    if os.path.exists(path):
+        return
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    tmp = path + '.part'
+    print(f"MNIST not found, downloading to {path} ...")
+    try:
+        urllib.request.urlretrieve(MNIST_URL, tmp)
+        if sha256_of(tmp) != MNIST_SHA256:
+            sys.exit(f"MNIST download failed the checksum check ({MNIST_URL})")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
 def load_mnist(path):
-    if not os.path.exists(path):
-        sys.exit(f"MNIST not found at {path} (pass --data path/to/mnist.npz)")
+    ensure_mnist(path)
     d = np.load(path)
 
     def one_hot(y, c=10):

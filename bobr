@@ -45,6 +45,7 @@ case "$cmd" in
   build)     exec "$ROOT/scripts/build.sh"  "$@" ;;
   clean)     exec "$ROOT/scripts/build.sh" clean ;;
   test)      exec "$ROOT/scripts/test.sh"   "$@" ;;
+  bench)     exec "$ROOT/scripts/bench.sh"  "$@" ;;
   ui)        exec "$ROOT/scripts/ui.sh"     "$@" ;;
   make)      exec make "$@" ;;
   run-script)
