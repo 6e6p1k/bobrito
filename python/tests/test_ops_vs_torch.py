@@ -340,6 +340,14 @@ def run_all_tests():
     
     tests.append(ReductionOpTest("min (dim=1)", bobr.min, torch.min, shape=(3, 4, 5), dim=1))
     tests.append(ReductionOpTest("max (dim=1)", bobr.max, torch.max, shape=(3, 4, 5), dim=1))
+    # non-last dims on 2D / 4D, negative dims and keepdims
+    tests.append(ReductionOpTest("sum 2D (dim=0)", bobr.sum, torch.sum, shape=(4, 5), dim=0))
+    tests.append(ReductionOpTest("sum 2D (dim=0, keepdims)", bobr.sum, torch.sum, shape=(4, 5), dim=0, keepdims=True))
+    tests.append(ReductionOpTest("sum 4D (dim=1)", bobr.sum, torch.sum, shape=(2, 3, 4, 5), dim=1))
+    tests.append(ReductionOpTest("sum (dim=-2)", bobr.sum, torch.sum, shape=(3, 4, 5), dim=-2))
+    tests.append(ReductionOpTest("sum (dim=2, keepdims)", bobr.sum, torch.sum, shape=(3, 4, 5), dim=2, keepdims=True))
+    tests.append(ReductionOpTest("min (dim=0)", bobr.min, torch.min, shape=(3, 4, 5), dim=0))
+    tests.append(ReductionOpTest("max 4D (dim=0, keepdims)", bobr.max, torch.max, shape=(2, 3, 4, 5), dim=0, keepdims=True))
     
     # ==================== Run Tests ====================
     passed = 0

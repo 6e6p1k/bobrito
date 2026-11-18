@@ -20,6 +20,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <execinfo.h>
@@ -44,6 +45,7 @@ static void segfault_handler(int sig) {
 #include "../src/evaluate.h"
 #include "../src/nodes.h"
 #include "../src/ops.h"
+#include "../src/optim.h"
 
 using namespace std;
 
@@ -222,13 +224,23 @@ struct MLP {
     int in_dim, hidden, out_dim;
 };
 
+// kaiming_normal / full are lazy init nodes: every eval would run them again and
+// reset the weights. Run the init once and keep its data in a leaf (like LinearLayer).
+static shared_ptr<Node> make_param(shared_ptr<Node> init, vector<int> shape, string label) {
+    eval(init);
+    auto p = make_leaf_node(shape, init->d_data);
+    p->set_label(label);
+    p->requires_grad = true;
+    return p;
+}
+
 static MLP init_mlp(int in_dim, int hidden, int out_dim) {
     MLP m;
     m.in_dim = in_dim; m.hidden = hidden; m.out_dim = out_dim;
-    m.W1 = kaiming_normal({in_dim, hidden}); m.W1->set_label("W1"); m.W1->requires_grad = true;
-    m.b1 = full({1, hidden}, 0.0f);          m.b1->set_label("b1"); m.b1->requires_grad = true;
-    m.W2 = kaiming_normal({hidden, out_dim});m.W2->set_label("W2"); m.W2->requires_grad = true;
-    m.b2 = full({1, out_dim}, 0.0f);         m.b2->set_label("b2"); m.b2->requires_grad = true;
+    m.W1 = make_param(kaiming_normal({in_dim, hidden}),  {in_dim, hidden},  "W1");
+    m.b1 = make_param(full({1, hidden}, 0.0f),           {1, hidden},       "b1");
+    m.W2 = make_param(kaiming_normal({hidden, out_dim}), {hidden, out_dim}, "W2");
+    m.b2 = make_param(full({1, out_dim}, 0.0f),          {1, out_dim},      "b2");
     return m;
 }
 
@@ -285,7 +297,7 @@ int main() {
     const int N_CLASS  = 10;
     const int BATCH    = 64;
     const int EPOCHS   = 3;
-    const float LR     = 7e-4f;
+    const float LR     = 0.5f;   // plain SGD, and the loss is divided by batch * classes
     const int N_BATCHES = N_TRAIN / BATCH;
 
     cout << "  train: " << N_TRAIN << "  test: " << N_TEST << "\n";
@@ -326,7 +338,7 @@ int main() {
             if (epoch == 0 && i == 0) { cout << "Backward done. bwd_order size=" << g.bwd_order.size() << "\n"; cout.flush(); }
             g.eval();
             if (epoch == 0 && i == 0) { cout << "Eval done.\n"; cout.flush(); }
-            g.sgd_step(LR);
+            SGD(g.parameters(), LR).step();
             if (epoch == 0 && i == 0) { cout << "SGD step done.\n"; cout.flush(); }
 
             // read loss value
@@ -369,7 +381,7 @@ int main() {
     float acc = 100.0f * correct / (N_TEST_BATCHES * BATCH);
     cout << "\nTest accuracy: " << acc << "%\n";
 
-    // After 3 epochs with lr=7e-4 expect at least 85% accuracy.
+    // After 3 epochs of SGD with lr=0.5 expect at least 85% accuracy.
     const float MIN_ACC = 85.0f;
     if (acc < MIN_ACC) {
         cerr << "[FAIL] accuracy " << acc << "% < " << MIN_ACC << "%\n";

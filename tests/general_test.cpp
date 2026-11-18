@@ -291,6 +291,79 @@ void test_matmul_grad() {
     check_values(b->owned_grad, {2, 2, 2, 2});
 }
 
+// ------ TRANSPOSE (3D) ------
+// [2, 2, 3] -> [2, 3, 2]: last two dims swapped, each batch on its own
+void test_transpose_3d_values() {
+    auto a = leaf({2, 2, 3}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, "a");
+    auto t = transpose(a);
+    run_eval(t);
+    check_values(t, {0, 3, 1, 4, 2, 5, 6, 9, 7, 10, 8, 11});
+}
+
+// ------ SUM over a non-last dim ------
+// [2, 2, 3] summed over dim 0 -> [2, 3], every input gets grad 1
+void test_sum_dim0_3d() {
+    auto a = leaf({2, 2, 3}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, "a", true);
+    auto s = sum(a, 0, false);
+    eval(s);
+    check_values(s, {6, 8, 10, 12, 14, 16});
+    check_values(a->owned_grad, vector<float>(12, 1.0f));
+}
+
+// ------ MAX over a middle dim, keepdims ------
+// [2, 2, 2] max over dim 1 -> [2, 1, 2], grad goes only to the max elements
+void test_max_dim1_keepdims_3d() {
+    auto a = leaf({2, 2, 2}, {1, 5, 3, 2, 7, 0, 4, 8}, "a", true);
+    auto m = max(a, 1, true);
+    eval(m);
+    check(m->get_ndim() == 3 && m->get_shape()[1] == 1, "keepdims should keep dim 1 as 1");
+    check_values(m, {3, 5, 7, 8});
+    check_values(a->owned_grad, {0, 1, 1, 0, 1, 0, 0, 1});
+}
+
+// ------ SUM over all dims, keepdims ------
+// no dim given (52) + keepdims -> shape [1, 1, 1], value is the total
+void test_sum_all_keepdims() {
+    auto a = leaf({2, 2, 3}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, "a", true);
+    auto s = sum(a, 52, true);
+    eval(s);
+    check(s->get_ndim() == 3 && s->get_size() == 1, "keepdims should give shape [1, 1, 1]");
+    check_values(s, {66});
+    check_values(a->owned_grad, vector<float>(12, 1.0f));
+}
+
+// ------ reduction dim out of range ------
+void test_reduction_dim_out_of_range() {
+    auto a = leaf({2, 3}, {1, 2, 3, 4, 5, 6}, "a");
+    bool threw_pos = false, threw_neg = false;
+    try { sum(a, 2, false); } catch (const logic_error&) { threw_pos = true; }
+    try { max(a, -3, true); } catch (const logic_error&) { threw_neg = true; }
+    check(threw_pos && threw_neg, "dim outside [-ndim, ndim) should throw");
+}
+
+// ------ ContentData ------
+// moved-from data reports "nothing allocated", d_to_d allocates and sets the size
+void test_content_data_move_and_d_to_d() {
+    ContentData a;
+    a.allocate(4);
+    ContentData b(std::move(a));
+    check(a.b_ptr == nullptr && a._size == 0, "moved-from ContentData should be empty");
+    check(b.size() == 4, "move should keep the size");
+
+    bool threw = false;
+    try { a.size(); } catch (const logic_error&) { threw = true; }
+    check(threw, "size() on a moved-from ContentData should throw");
+
+    ContentData c;
+    c.allocate(2);
+    c = std::move(b);  // c's old block is freed, c takes b's block
+    check(c.size() == 4 && b.b_ptr == nullptr, "move assignment should take the block");
+
+    ContentData d;
+    d.d_to_d(c.data(), 4);  // not allocated yet -> d_to_d allocates
+    check(d.size() == 4, "d_to_d should set the size when it allocates");
+}
+
 // ============================================================
 //                          MAIN
 // ============================================================
@@ -317,6 +390,12 @@ int main() {
         RUN(test_chain_neg_add_grad);
         RUN(test_shared_input_grad);
         RUN(test_matmul_grad);
+        RUN(test_transpose_3d_values);
+        RUN(test_sum_dim0_3d);
+        RUN(test_max_dim1_keepdims_3d);
+        RUN(test_sum_all_keepdims);
+        RUN(test_reduction_dim_out_of_range);
+        RUN(test_content_data_move_and_d_to_d);
     } else {
         cout << "\n[SKIP] No CUDA device — skipping grad value tests\n";
     }

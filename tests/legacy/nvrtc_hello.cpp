@@ -6,9 +6,9 @@
 #include <string>
 #include <vector>
 
-#include "../src/utils.h"
-#include "../src/allocator.cuh"
-#include "../src/kernels.cuh"
+#include "../../src/utils.h"
+#include "../../src/allocator.cuh"
+#include "../../src/kernels.cuh"
 
 #define NVRTC_CHECK(x) do { nvrtcResult r = (x); \
     if (r != NVRTC_SUCCESS) { std::cerr << "NVRTC err @" << __LINE__ << ": " << nvrtcGetErrorString(r) << "\n"; std::exit(1); } } while(0)

@@ -34,6 +34,7 @@ case "$SUITE" in
     run_py python/tests/test_shapes.py || failed=1
     run_py python/tests/test_advanced_ops.py || failed=1
     run_make run_gen_test || failed=1
+    run_make run_new_test || failed=1
     ;;
   *)
     echo "Unknown suite: $SUITE (use smoke or full)" >&2

@@ -78,7 +78,7 @@
         {
           "id": "test-full",
           "label": "Full tests",
-          "description": "Smoke plus ops vs torch, shapes, advanced ops and general_test",
+          "description": "Smoke plus ops vs torch, shapes, advanced ops, general_test and new_test",
           "bobr": ["test", "full"]
         }
       ]

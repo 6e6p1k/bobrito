@@ -9,10 +9,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "../src/graph_viz.h"
-#include "../src/nodes.h"
-#include "../src/ops.h"
-#include "../src/evaluate.h"
+#include "../../src/graph_viz.h"
+#include "../../src/nodes.h"
+#include "../../src/ops.h"
+#include "../../src/evaluate.h"
 
 using namespace std;
 

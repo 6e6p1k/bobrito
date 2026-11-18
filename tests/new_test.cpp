@@ -240,7 +240,8 @@ void test_labels() {
 void test_cross_entropy_shape() {
     auto logits  = make_leaf_node({4, 3}, vector<float>(12, 0.0f));
     auto targets = make_leaf_node({4, 3}, vector<float>(12, 0.0f));
-    check_shape(cross_entropy(logits, targets), {4});
+    // cross_entropy returns the batch-mean loss, a single value
+    check_shape(cross_entropy(logits, targets), {1});
 }
 
 // ============================================================
@@ -381,13 +382,13 @@ void test_cross_entropy_perfect_prediction() {
 
 void test_cross_entropy_batch() {
     // logits = [[1,0],[0,1]], targets = [[1,0],[0,1]]
-    // each sample: neg_loss_i = log(1 + e^-1); divided by batch=2
-    float expected = std::log(1.0f + std::exp(-1.0f)) / 2.0f;
+    // each sample: neg_loss_i = log(1 + e^-1); mean over batch=2 is the same value
+    float expected = std::log(1.0f + std::exp(-1.0f));
     auto logits  = make_leaf_node({2, 2}, {1.0f, 0.0f, 0.0f, 1.0f});
     auto targets = make_leaf_node({2, 2}, {1.0f, 0.0f, 0.0f, 1.0f});
     auto loss = cross_entropy(logits, targets);
     eval(loss);
-    check_values(loss, {expected, expected}, 1e-4f);
+    check_values(loss, {expected}, 1e-4f);
 }
 
 void test_chained_eval() {

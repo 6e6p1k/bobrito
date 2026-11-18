@@ -9,6 +9,7 @@
 #include "../src/evaluate.h"
 #include "../src/nodes.h"
 #include "../src/ops.h"
+#include "../src/optim.h"
 #include "../src/utils.h"
 
 #define TIME(label, iters, code) \
@@ -81,7 +82,7 @@ vector<shared_ptr<Node>> train_1(int N_ITERS) {
         auto g = Graph(loss, true);
         g.backward();
         g.eval();
-        g.sgd_step(1e-3);
+        SGD(g.parameters(), 1e-3).step();
         // g.zero_grads();
     }
     // print_snapshot("AFTER LOOP", snapshot());
@@ -112,7 +113,7 @@ vector<shared_ptr<Node>> train_2(int N_ITERS) {
     for (int i = 0; i < N_ITERS; i++) {
         // g.zero_grads();
         g->eval();
-        g->sgd_step(1e-3);
+        SGD(g->parameters(), 1e-3).step();
     }
     z.reset();
     act.reset();
@@ -166,7 +167,7 @@ int _main() {
     for (int i = 0; i < N_ITERS; i++) {
         // g.zero_grads();
         g->eval();
-        g->sgd_step(1e-3);
+        SGD(g->parameters(), 1e-3).step();
         print_snapshot("iteration " + to_string(i), snapshot());
     }
     g->detach_grads_from_bwd_graph();

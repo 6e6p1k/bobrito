@@ -14,11 +14,11 @@
 #include <string>
 #include <vector>
 
-#include "../src/allocator.cuh"
-#include "../src/evaluate.h"
-#include "../src/nodes.h"
-#include "../src/ops.h"
-#include "../src/graph_viz.h"
+#include "../../src/allocator.cuh"
+#include "../../src/evaluate.h"
+#include "../../src/nodes.h"
+#include "../../src/ops.h"
+#include "../../src/graph_viz.h"
 
 using namespace std;
 
