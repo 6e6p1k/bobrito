@@ -6,13 +6,13 @@ namespace kernels
 {
 __global__ void elemwise(float* a, float* b, float* out, int n, BroadcastInfo info);
 
-__global__ void fill(float* dst, float val, int n) 
+__global__ void fill(float* dst, float val, int n)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) dst[i] = val;
 }
 
-__global__ void arange(float* dst, float start, float step, int n) 
+__global__ void arange(float* dst, float start, float step, int n)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) dst[i] = start + i * step;
@@ -28,7 +28,7 @@ __global__ void contiguous(float* src, float* dst, int size, ContiguousInfo info
 {
     int out_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (out_idx >= size) return;
-    
+
     // decompose flat output index into nd coords
     int src_idx = 0;
     int remaining = out_idx;
@@ -37,7 +37,7 @@ __global__ void contiguous(float* src, float* dst, int size, ContiguousInfo info
         remaining /= info.shape[i];
         src_idx += coord * info.strides[i];
     }
-    
+
     dst[out_idx] = src[src_idx];
 }
 
@@ -46,17 +46,17 @@ __global__ void transpose(float* src, float* dst, int m, int n, int size)
     // Transpose a [m, n] matrix to [n, m]
     // src is laid out as [m, n]: element [i, j] is at src[i * n + j]
     // dst should be laid out as [n, m]: element [j, i] should be at dst[j * m + i]
-    
+
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
-    
+
     // Convert flat index to [m, n] coordinates
     int i = idx / n;  // row in source (m dimension)
     int j = idx % n;  // col in source (n dimension)
-    
+
     // In destination [n, m], element [j, i] is at position j * m + i
     int dst_idx = j * m + i;
-    
+
     dst[dst_idx] = src[idx];
 }
 
@@ -95,14 +95,20 @@ __global__ void sgd(float* weight_data, float* grad_data, float lr, int n) {
     if (i < n) weight_data[i] = weight_data[i] - grad_data[i] * lr;
 }
 
+__global__ void increment(float* t) { *t += 1.0f; }
+
 __global__ void adamw(
     float* __restrict__ weight,
     const float* __restrict__ grad,
     float* __restrict__ m,
     float* __restrict__ v,
-    float lr, float lr_t, float beta1, float beta2, float eps, float wd,
+    float lr, const float* t, float beta1, float beta2, float eps, float wd,
     int n)
 {
+    float bc1  = 1.0f - powf(beta1, *t);
+    float bc2  = 1.0f - powf(beta2, *t);
+    float lr_t = lr * sqrtf(bc2) / bc1;
+
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
 
@@ -148,12 +154,12 @@ __global__ void max_min_bwd_last_dim(
 ) {
     // Standard global index
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    
+
     // Total elements is N * D
     if (i < N * D) {
         // Determine which row (leading dim index) this thread belongs to
-        int row_idx = i / D; 
-        
+        int row_idx = i / D;
+
         // Compare current element to the target of its specific row
         // If it matches, it gets the gradient; otherwise, 0.
         if (fwd_data[i] == target[row_idx]) {

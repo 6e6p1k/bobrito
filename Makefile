@@ -23,6 +23,9 @@ NVCCFLAGS  := -std=c++17 -Isrc \
               -MMD -MP \
               -DBOBR_SRC_DIR=\"$(abspath $(SRC_DIR))\" \
               -DNVRTC_ARCH_FLAG=\"--gpu-architecture=$(GPU_ARCH)\"
+ifdef ALLOC_DEBUG
+        NVCCFLAGS += -DBOBR_ALLOC_DEBUG
+endif
 # rpath: the extension finds the toolkit's libraries without LD_LIBRARY_PATH
 LDFLAGS    := -L$(CUDA_LIB_DIR) -Xlinker -rpath -Xlinker $(CUDA_LIB_DIR) \
               -lcublas -lcurand -lcuda -lcudart -lnvrtc
@@ -34,12 +37,14 @@ CPP_SRCS := $(SRC_DIR)/shape_data.cpp \
             $(SRC_DIR)/utils.cpp \
             $(SRC_DIR)/nodes.cpp \
             $(SRC_DIR)/evaluate.cpp \
-            $(SRC_DIR)/graph_viz.cpp
+            $(SRC_DIR)/graph_viz.cpp \
+			$(SRC_DIR)/train_step.cpp
 
 CU_SRCS  := $(SRC_DIR)/primitives.cu \
             $(SRC_DIR)/kernels.cu \
             $(SRC_DIR)/allocator.cu \
-            $(SRC_DIR)/optim.cu
+            $(SRC_DIR)/optim.cu \
+            $(SRC_DIR)/stream.cu
 
 CPP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SRCS))
 CU_OBJS  := $(patsubst $(SRC_DIR)/%.cu,$(BUILD_DIR)/%.o,$(CU_SRCS))
@@ -50,14 +55,16 @@ PY_CPP_SRCS := $(SRC_DIR)/nodes.cpp \
                $(SRC_DIR)/utils.cpp \
                $(SRC_DIR)/graph_viz.cpp \
                $(SRC_DIR)/evaluate.cpp \
-               $(SRC_DIR)/shape_data.cpp
+               $(SRC_DIR)/shape_data.cpp \
+			   $(SRC_DIR)/train_step.cpp
 
 PY_CU_SRCS  := $(SRC_DIR)/allocator.cu \
                $(SRC_DIR)/module.cu \
                $(SRC_DIR)/kernels.cu \
                $(SRC_DIR)/optim.cu \
                $(SRC_DIR)/primitives.cu \
-               $(SRC_DIR)/fusion_reactor.cu
+               $(SRC_DIR)/fusion_reactor.cu \
+               $(SRC_DIR)/stream.cu
 
 PY_CPP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(PY_BUILD_DIR)/%.o,$(PY_CPP_SRCS))
 PY_CU_OBJS  := $(patsubst $(SRC_DIR)/%.cu,$(PY_BUILD_DIR)/%.o,$(PY_CU_SRCS))

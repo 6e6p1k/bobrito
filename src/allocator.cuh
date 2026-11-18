@@ -1,56 +1,29 @@
 #pragma once
 
-#include <alloca.h>
+#include <cuda_runtime_api.h>
+#include <driver_types.h>
 #include <cstddef>
 #include <iostream>
-#include <memory>
-#include <stdexcept>
+#include <iterator>
 #include <string>
-#include <vector>
+#include <unordered_set>
 
-struct Grid;
-
-enum struct OutStatus {BlockFound, BlockNotFound, Success, Error};
-
-struct Block 
+struct Block
 {
     void* d_ptr = nullptr;
     size_t size = 0;
-    Block* next_free = nullptr;
-    Grid* mom = nullptr;
-    OutStatus allocate_block(void);
-    OutStatus free_block(void);
+    void allocate_block(void);
+    void free_block(void);
 };
 
-struct Grid
+class MemoryPool
 {
-    int max_blocks_num;
-    int blocks_in_use = 0;
-    bool is_free = true;
-    Block* next_free_block = nullptr;
-    Grid* next_free_grid = nullptr;
-    Block blocks[0];
-
-    static Grid* init(int max_blocks_num, int size_per_block);
-
-    OutStatus get_free(Block** dst);
-
-    void free_block(Block* block);
-
-    OutStatus free_grid(void);
-
-    private:
-    OutStatus free_single_grid(void);
-};
-
-
-class MemoryPool 
-{
+    cudaMemPool_t pool;
     int total_allocations = 0;
     size_t total_bytes_in_use = 0;
 
 public:
-    std::vector<Block*> allocated_blocks;
+    std::unordered_set<Block*> allocated_blocks;
 
     // access
     static MemoryPool& call();
@@ -64,8 +37,8 @@ public:
     // releases block on device
     void free(Block* d_ptr);
 
-    // reset all allocations 
-    OutStatus reset(void);
+    // release unused cached memory
+    void empty_cache(void);
 
     // prevent copies
     MemoryPool(const MemoryPool&) = delete;
@@ -74,23 +47,6 @@ public:
 private:
     // private constructor
     MemoryPool();
-
-    int pick_grid_tier(size_t bytes);
-
-    Grid* make_connect_grid(int tier);
-
-    // private variables
-    Grid* grids[6] = {};   // tier 5 (ULTRA) is created on first use
-    static constexpr size_t MICRO_BLOCK  = 64;       // 64B
-    static constexpr size_t TINY_BLOCK   = 1 << 10;  // 1KB
-    static constexpr size_t SMALL_BLOCK  = 1 << 16;  // 64KB
-    static constexpr size_t MEDIUM_BLOCK = 1 << 20;  // 1MB
-    static constexpr size_t LARGE_BLOCK  = 1 << 24;  // 16MB
-    static constexpr size_t ULTRA_LARGE_BLOCK = 1 << 28;  // 256MB, lazy
-    static constexpr int NUM_TIERS   = 6;
-    static constexpr int EAGER_TIERS = 5;  // tiers allocated up front
-    static constexpr size_t TIER_SIZES[6] = {64, 1<<10, 1<<16, 1<<20, 1<<24, 1<<28};
-    static constexpr int BLOCKS_PER_TIER[6] = {64, 256, 128, 64, 32, 2};
 };
 
 // ===============    MEMORY UTILITIES   ==================
@@ -123,9 +79,37 @@ struct ContentData
     ~ContentData()
     {
         if (b_ptr != nullptr) {
-            MemoryPool::call().free(b_ptr);
-            b_ptr = nullptr;
+            try {
+                MemoryPool::call().free(b_ptr);
+            } catch (const std::exception& e) {
+                std::cerr << "failed to free a block: " << e.what() << std::endl;
+            }
         }
+    }
+
+    ContentData() = default;
+
+    // make it non-copyable
+    ContentData(const ContentData&) = delete;
+    ContentData& operator=(const ContentData&) = delete;
+
+    ContentData(ContentData&& other) noexcept
+        : b_ptr(other.b_ptr), _size(other._size)
+    {
+        other.b_ptr = nullptr;
+        other._size = -1;
+    }
+
+    ContentData& operator=(ContentData&& other) noexcept
+    {
+        if (this != &other) {
+            if (b_ptr != nullptr) MemoryPool::call().free(b_ptr);
+            b_ptr = other.b_ptr;
+            _size = other._size;
+            other.b_ptr = nullptr;
+            other._size = -1;
+        }
+        return *this;
     }
 
     private:

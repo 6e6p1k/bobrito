@@ -14,6 +14,7 @@
 #include "ops.h"
 #include "primitives.h"
 #include "shape_data.h"
+#include "stream.h"
 #include "utils.h"
 #include "primitives.h"
 
@@ -22,14 +23,6 @@
 
 using namespace std;
 static int g_seed = 0;
-
-void CUDA_CHECK() {
-    cudaError_t err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        printf("CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));
-        exit(1);
-    }
-}
 
 void CUDA_LAST_ERROR() {
     cudaError_t error = cudaGetLastError();
@@ -107,7 +100,7 @@ shared_ptr<Node> _empty_leaf_node(vector<int> shape) {
 template <typename KernelOp>
 static void unary_eval(Node* node) {
     int n = node->get_size();
-    kernels::unary<KernelOp><<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::unary<KernelOp><<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         node->inputs[0]->get_data(), node->get_data(), n);
 }
 
@@ -139,7 +132,7 @@ BwdReluPrim prim_bwd_relu;
 
 void BwdReluPrim::eval(Node* node) {
     int n = node->get_size();
-    kernels::bwd_relu<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::bwd_relu<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         node->inputs[0]->get_data(), node->inputs[1]->get_data(),
         node->get_data(), n);
 }
@@ -209,7 +202,7 @@ FullPrim prim_full;
 void FullPrim::eval(Node* node) {
     int n = node->get_size();
     float val = SCALAR(node->inputs[0])->value;
-    kernels::fill<<<GRID_SIZE(n), BLOCK_SIZE>>>(node->get_data(), val, n);
+    kernels::fill<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(node->get_data(), val, n);
 }
 
 shared_ptr<Node> full(int* shape, int ndim, float fill_val) {
@@ -231,7 +224,7 @@ void ArangePrim::eval(Node* node) {
     int n = node->get_size();
     float start = SCALAR(node->inputs[0])->value;
     float step = SCALAR(node->inputs[1])->value;
-    kernels::arange<<<GRID_SIZE(n), BLOCK_SIZE>>>(node->get_data(), start,
+    kernels::arange<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(node->get_data(), start,
                                                   step, n);
 }
 
@@ -263,11 +256,12 @@ shared_ptr<Node> arange(int start, int end, int step) {
 void _uniform(float* dst, float limit, int n) {
     curandGenerator_t gen;
     curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+    curandSetStream(gen, bobr::current_stream());
     curandSetPseudoRandomGeneratorSeed(gen, g_seed++);
     curandGenerateUniform(gen, dst, n);
     curandDestroyGenerator(gen);
 
-    kernels::scale<<<GRID_SIZE(n), BLOCK_SIZE>>>(dst, limit, n);
+    kernels::scale<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(dst, limit, n);
 }
 
 UniformPrim prim_uniform;
@@ -302,6 +296,7 @@ shared_ptr<Node> xavier_uniform(vector<int> shape) {
 void _normal(float* dst, float mean, float std, int n) {
     curandGenerator_t gen;
     curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+    curandSetStream(gen, bobr::current_stream());
     curandSetPseudoRandomGeneratorSeed(gen, g_seed++);
     curandGenerateNormal(gen, dst, n, mean, std);
     curandDestroyGenerator(gen);
@@ -356,7 +351,7 @@ static void elemwise_eval(Node* node) {
     BroadcastInfo info = broadcast::elemwise(node);
     int n = node->get_size();
 
-    kernels::elemwise<KernelOp><<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::elemwise<KernelOp><<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         node->inputs[0]->get_data(), node->inputs[1]->get_data(),
         node->get_data(), n, info);
 }
@@ -452,10 +447,9 @@ void BwdDivPrim::eval(Node* node) {
         node->get_shape(), node->get_ndim(),
         A->get_ndim(), B->get_ndim());
 
-    kernels::bwd_div<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::bwd_div<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         A->get_data(), B->get_data(), prev_grad->get_data(), node->get_data(), n, info);
 
-    CUDA_CHECK();
     CUDA_LAST_ERROR();
 }
 
@@ -470,7 +464,7 @@ PowPrim prim_pow;
 
 void PowPrim::eval(Node* node) {
     int n = node->get_size();
-    kernels::pow<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::pow<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         node->inputs[0]->get_data(), node->inputs[1]->get_data(), node->get_data(), n);
 }
 
@@ -492,7 +486,7 @@ BwdPowPrim prim_bwd_pow;
 
 void BwdPowPrim::eval(Node* node) {
     int n = node->get_size();
-    kernels::fused_bwd_pow<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::fused_bwd_pow<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         node->inputs[0]->get_data(), node->inputs[1]->get_data(), node->inputs[2]->get_data(),
         node->get_data(), n);
 }
@@ -513,6 +507,7 @@ void MatMulPrim::eval(Node* node) {
     static cublasHandle_t handle = []() {
         cublasHandle_t h;
         cublasCreate(&h);
+        cublasSetStream(h, bobr::current_stream());
         cublasSetMathMode(h, CUBLAS_TF32_TENSOR_OP_MATH);
         return h;
     }();
@@ -621,7 +616,7 @@ struct cubSum {
     static cudaError_t reduce(void* tmp, size_t& tmp_bytes, float* in,
                               float* out, int n, int* begin, int* end) {
         return cub::DeviceSegmentedReduce::Sum(tmp, tmp_bytes, in, out, n,
-                                               begin, end);
+                                               begin, end, bobr::current_stream());
     }
 };
 
@@ -629,7 +624,7 @@ struct cubMax {
     static cudaError_t reduce(void* tmp, size_t& tmp_bytes, float* in,
                               float* out, int n, int* begin, int* end) {
         return cub::DeviceSegmentedReduce::Max(tmp, tmp_bytes, in, out, n,
-                                               begin, end);
+                                               begin, end, bobr::current_stream());
     }
 };
 
@@ -637,7 +632,7 @@ struct cubMin {
     static cudaError_t reduce(void* tmp, size_t& tmp_bytes, float* in,
                               float* out, int n, int* begin, int* end) {
         return cub::DeviceSegmentedReduce::Min(tmp, tmp_bytes, in, out, n,
-                                               begin, end);
+                                               begin, end, bobr::current_stream());
     }
 };
 
@@ -656,7 +651,7 @@ static void reduction_ld_eval(Node* node) {
     MemoryPool::call().allocate(&b_ptr, (num_segments + 1) * sizeof(int));
     int* offsets = (int*)b_ptr->d_ptr;
 
-    kernels::reduction_offsets<<<GRID_SIZE(num_segments + 1), BLOCK_SIZE>>>(
+    kernels::reduction_offsets<<<GRID_SIZE(num_segments + 1), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         offsets, last_dim, num_segments);
 
     size_t temp_storage_bytes = 0;
@@ -692,7 +687,7 @@ void MaxMinBwdPrim::eval(Node* node) {
     auto grad = node->inputs[1];
     int rows = fwd_node->get_size();
     int last_dim = fwd_node->inputs[0]->get_size() / rows;
-    kernels::max_min_bwd_last_dim<<<GRID_SIZE(rows * last_dim), BLOCK_SIZE>>>(
+    kernels::max_min_bwd_last_dim<<<GRID_SIZE(rows * last_dim), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         fwd_node->inputs[0]->get_data(),  // original input [N, D]
         fwd_node->get_data(),              // max values [N]
         grad->get_data(),                  // upstream gradient [N]
@@ -753,7 +748,7 @@ ExpandLDPrim prim_expand_ld;
 
 void ExpandLDPrim::eval(Node* node) {
     int n = node->get_size();
-    kernels::expand_last_dim<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::expand_last_dim<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         node->inputs[0]->get_data(), node->get_data(),
         node->get_shape()[node->get_ndim() - 1], n);
 }
@@ -885,7 +880,7 @@ void TransposePrim::eval(Node* node) {
     int last_dim = node->inputs[0]->get_shape()[node->inputs[0]->get_ndim() - 1];
     int second_last_dim = node->inputs[0]->get_shape()[node->inputs[0]->get_ndim() - 2];
 
-    kernels::transpose<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::transpose<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         node->inputs[0]->get_data(), node->get_data(),
         second_last_dim, last_dim, n);
 }
@@ -918,7 +913,7 @@ ContiguousPrim prim_contiguous;
 void ContiguousPrim::eval(Node* node) {
     int n = node->get_size();
     ContiguousInfo info = broadcast::contiguous(node);
-    kernels::contiguous<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+    kernels::contiguous<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(
         node->inputs[0]->get_data(), node->get_data(), n, info);
 }
 

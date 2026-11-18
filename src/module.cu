@@ -7,6 +7,7 @@
 #include "module.h"
 #include "ops.h"
 #include "kernels.cuh"
+#include "stream.h"
 
 // void init_weight(std::string initiation_type, float* d_data, int in_dim, int out_dim, int size) {
 //     if (initiation_type == "kaiming_normal") {
@@ -33,7 +34,7 @@ LinearLayer::LinearLayer(int in_dim, int out_dim) {
     auto b_data = std::make_shared<ContentData>();
     int b_size = out_dim;
     b_data->allocate(b_size);
-    kernels::fill<<<GRID_SIZE(b_size), BLOCK_SIZE>>>(b_data->data(), 0.0f, b_size);
+    kernels::fill<<<GRID_SIZE(b_size), BLOCK_SIZE, 0, bobr::current_stream()>>>(b_data->data(), 0.0f, b_size);
     b = make_leaf_node({1, out_dim}, b_data);
     b->requires_grad = true;
     b->set_label("b(" + std::to_string(out_dim) + ")");
@@ -59,7 +60,7 @@ LinearReluLayer::LinearReluLayer(int in_dim, int out_dim) {
     auto b_data = std::make_shared<ContentData>();
     int b_size = out_dim;
     b_data->allocate(b_size);
-    kernels::fill<<<GRID_SIZE(b_size), BLOCK_SIZE>>>(b_data->data(), 0.0f, b_size);
+    kernels::fill<<<GRID_SIZE(b_size), BLOCK_SIZE, 0, bobr::current_stream()>>>(b_data->data(), 0.0f, b_size);
     b = make_leaf_node({1, out_dim}, b_data);
     b->requires_grad = true;
     b->set_label("b(" + std::to_string(out_dim) + ")");

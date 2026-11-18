@@ -8,6 +8,7 @@
 
 #include "nodes.h"
 #include "kernels.cuh"
+#include "stream.h"
 
 // ============================================================
 //                         NVRTC HANDLER
@@ -43,7 +44,7 @@ void launch(CUfunction f, void** args, int n) {
     CU_CHECK(cuLaunchKernel(f, 
         GRID_SIZE(n),1,1, 
         BLOCK_SIZE,1,1, 
-        0, nullptr, args, nullptr));
+        0, bobr::current_stream(), args, nullptr));
 }
 
 // Dispatches fusion ops

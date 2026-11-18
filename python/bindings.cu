@@ -14,6 +14,8 @@
 #include "../src/module.h"
 #include "pybind11/detail/common.h"
 #include "pybind11/pytypes.h"
+#include "stream.h"
+#include "train_step.h"
 
 namespace py = pybind11;
 using namespace std;
@@ -42,45 +44,104 @@ std::shared_ptr<Node> _make_leaf_node_from_h_data(float* h_data, vector<int> sha
     return node;
 }
 
-void steal_data(shared_ptr<Node>& thief, py::object victim) {
+void data_from_numpy(shared_ptr<Node>& n, py::array_t<float, py::array::c_style | py::array::forcecast> arr) {
+    py::buffer_info info = arr.request();
+    std::vector<int> shape(info.shape.begin(), info.shape.end());
+    float* h_data = static_cast<float*>(info.ptr);
+
+    if (n->get_ndim() != (int)shape.size()) throw std::logic_error("Shapes should be the same.");
+    for (int i = 0; i < n->get_ndim(); ++i)
+        if (n->get_shape()[i] != shape[i])
+            throw std::logic_error("Shapes should be the same.");
+
+    if (!n->is_data())
+        n->d_data = make_shared<ContentData>();
+    if (!n->is_data_allocated())
+        n->d_data->allocate(n->get_size());
+    n->d_data->h_to_d(h_data, n->get_size());
+}
+
+void data_from_cuda(shared_ptr<Node>& n, py::object gpu_array) {
+    // Needs __cuda_array_interface__  (standard, widely-supported CUDA interchange protocol)
+    if (!py::hasattr(gpu_array, "__cuda_array_interface__"))
+        throw std::runtime_error(
+            "data_from_cuda: object must expose __cuda_array_interface__ "
+            "(i.e. be either torch.Tensor on CUDA, cupy.ndarray, etc.)");
+    py::dict iface = gpu_array.attr("__cuda_array_interface__").cast<py::dict>();
+
+    // Shape check
+    py::tuple shape_tuple = iface["shape"].cast<py::tuple>();
     std::vector<int> shape;
-    float* data_ptr = nullptr;
-    bool on_gpu = false;
+    for (auto s : shape_tuple) shape.push_back(s.cast<int>());
 
-    if (py::hasattr(victim, "__cuda_array_interface__")) {
-        py::dict iface = victim.attr("__cuda_array_interface__").cast<py::dict>();
-        py::tuple shape_tuple = iface["shape"].cast<py::tuple>();
-        for (auto s : shape_tuple) shape.push_back(s.cast<int>());
-        py::tuple data_tuple = iface["data"].cast<py::tuple>();
-        data_ptr = reinterpret_cast<float*>(data_tuple[0].cast<uintptr_t>());
-        on_gpu = true;
+    // Check whether ndim matches
+    if ((int)shape.size() != n->get_ndim())
+        throw std::logic_error(
+            "data_from_cuda: ndim mismatch (node has " +
+            std::to_string(n->get_ndim()) + ", got " +
+            std::to_string(shape.size()) + ")");
+
+    // Check whether every dim matches
+    for (int i = 0; i < (int)shape.size(); i++) {
+        if (shape[i] != n->get_shape()[i])
+            throw std::logic_error(
+                "data_from_cuda: shape mismatch at dim " + std::to_string(i));
     }
+
+    // Dtype check (currently we only support float32)
+    std::string typestr = iface["typestr"].cast<std::string>();
+    // accept "<f4", "=f4", "f4"; second char is endian, last two are kind+size
+    if (typestr.size() < 3 ||
+        typestr[typestr.size() - 2] != 'f' ||
+        typestr[typestr.size() - 1] != '4')
+        throw std::logic_error(
+            "data_from_cuda: only float32 supported, got typestr='" +
+            typestr + "'");
+
+    // Extract device pointer
+    py::tuple data_tuple = iface["data"].cast<py::tuple>();
+    float* src_ptr = reinterpret_cast<float*>(data_tuple[0].cast<uintptr_t>());
+
+    // Strides check, check whether tensor is contiguous
+    // (for cont tensors, __cuda_array_interface__ sets strides=None)
+    if (iface.contains("strides") && !iface["strides"].is_none()) {
+        // Compute what contiguous strides would be
+        py::tuple strides_tuple = iface["strides"].cast<py::tuple>();
+        std::vector<int> strides;
+        for (auto s : strides_tuple) strides.push_back(s.cast<int>());
+
+        // Compare to the actual strides
+        int expected = sizeof(float);
+        bool contig = true;
+        for (int i = (int)shape.size() - 1; i >= 0; i--) {
+            if (strides[i] != expected) { contig = false; break; }
+            expected *= shape[i];
+        }
+        if (!contig) // given strides are dont match contiguous ones
+            throw std::logic_error(
+                "data_from_cuda: source tensor is non-contiguous. "
+                "Call .contiguous() on it first.");
+    }
+
+    // Allocate d_data if the node doesnt have one yet
+    // (eg when the user calls data_from_cuda before evaluating the graph)
+    if (!n->is_data()) n->d_data = make_shared<ContentData>();
+    if (!n->is_data_allocated()) n->d_data->allocate(n->get_size());
+
+    // !!! d_to_d writes INTO the existing buffer !!!
+    // ContentData::d_data pointer doesnt change, graph's cached pointers remain valid.
+    n->d_data->d_to_d(src_ptr, n->get_size());
+}
+
+void steal_data(shared_ptr<Node>& thief, py::object victim) {
+    // CUDA arrays (torch, cupy, ...) first
+    if (py::hasattr(victim, "__cuda_array_interface__"))
+        data_from_cuda(thief, victim);
     // Then buffer protocol (numpy, array.array)
-    else if (py::isinstance<py::buffer>(victim)) {
-        py::buffer_info info = py::buffer(victim).request();
-        for (auto s : info.shape) shape.push_back(s);
-        data_ptr = static_cast<float*>(info.ptr);
-    }
-    else {
+    else if (py::isinstance<py::buffer>(victim))
+        data_from_numpy(thief, victim);
+    else
         throw std::runtime_error("Expected numpy array, torch tensor, or cuda array");
-    }
-
-    // check shape
-    int size = utils::numel(shape.size(), shape.data());
-    bool ndim_match = shape.size() == thief->get_ndim();
-    bool size_match = size == thief->get_size();
-    if (!ndim_match || !size_match) 
-        throw logic_error("Metadata doesn't match.");
-
-    // reset thief's ContentData
-    thief->d_data = make_shared<ContentData>();
-    thief->d_data->allocate(size);
-
-    if (on_gpu) {
-        thief->d_data->d_to_d(data_ptr, size);
-    } else {
-        thief->d_data->h_to_d(data_ptr, size);
-    }
 }
 
 void steal_data(shared_ptr<Node>& thief, shared_ptr<Node> victim) {
@@ -91,7 +152,7 @@ void steal_data(shared_ptr<Node>& thief, shared_ptr<Node> victim) {
 
 PYBIND11_MODULE(bobrito, m) {
     m.doc() = "Bobrito - CUDA autograd library";
-    
+
     // Node wrapper
     py::class_<Node, shared_ptr<Node>>(m, "Node")
         .def_property_readonly("data", [](const shared_ptr<Node>& n) {
@@ -121,120 +182,27 @@ PYBIND11_MODULE(bobrito, m) {
             [](const shared_ptr<Node>& n) { return n->label; },
             [](shared_ptr<Node>& n, const string& new_label) { n->set_label(new_label); })
 
-        // debug properties
+        // Debug properties
         .def_property_readonly("is_bwd", [](const shared_ptr<Node>& n) { return n->is_bwd; })
         .def_property_readonly("is_label", &Node::is_label)
         .def_property_readonly("is_meta", &Node::is_meta)
         .def_property_readonly("is_data", &Node::is_data)
         .def_property_readonly("is_data_allocated", &Node::is_data_allocated)
         .def_property_readonly("is_owned_grad", [](const shared_ptr<Node>& n) { return n->owned_grad != nullptr && n->owned_grad->is_data_allocated(); })
-        .def_property_readonly("data_ptr", [](const shared_ptr<Node>& n) { return n->get_data(); })
+        .def_property_readonly("data_ptr", [](shared_ptr<Node>& n) {
+            return n->is_data_allocated() ? reinterpret_cast<uintptr_t>(n->get_data()) : uintptr_t(0);
+        })
 
         .def("eval", [](shared_ptr<Node>& n) { eval(n); })
+        .def("set_label", &Node::set_label)
+        .def("get_owned_grad_ptr", [](shared_ptr<Node>& n) {
+            return reinterpret_cast<uintptr_t>(n->owned_grad->d_data->data());
+        })
+        .def("__repr__", [](const shared_ptr<Node>& n) { return make_node_string(n); })
         .def("steal_data", py::overload_cast<shared_ptr<Node>&, shared_ptr<Node>>(&steal_data))
         .def("steal_data", py::overload_cast<shared_ptr<Node>&, py::object>(&steal_data))
-        .def("data_from_numpy", [](shared_ptr<Node>& n, py::array_t<float, py::array::c_style | py::array::forcecast> arr) {
-            py::buffer_info info = arr.request();
-            std::vector<int> shape(info.shape.begin(), info.shape.end());
-            float* h_data = static_cast<float*>(info.ptr);
-            
-            if (n->get_ndim() != shape.size()) throw std::logic_error("Shapes should be the same.");
-            for (int i = 0; i < n->get_ndim(); ++i)
-                if (n->get_shape()[i] != shape[i])
-                    throw std::logic_error("Shapes should be the same.");
-            
-            if (!n->is_data())
-                n->d_data = make_shared<ContentData>();
-            if (!n->is_data_allocated())
-                n->d_data->allocate(n->get_size());
-            n->d_data->h_to_d(h_data, n->get_size());
-            cudaDeviceSynchronize();
-        })
-        .def("set_label", &Node::set_label)
-        .def("get_owned_grad_ptr", [](shared_ptr<Node>& n) { return n->owned_grad->d_data->data(); })
-        .def("__repr__", [](const shared_ptr<Node>& n) {
-            return make_node_string(n);
-        })
-
-        .def("data_from_cuda", [](shared_ptr<Node>& n, py::object gpu_array) {
-            // Require __cuda_array_interface__ — this is the standard CUDA
-            // interchange protocol. Torch, CuPy, Numba, JAX via dlpack-cuda,
-            // all implement it.
-            if (!py::hasattr(gpu_array, "__cuda_array_interface__"))
-                throw std::runtime_error(
-                    "data_from_cuda: object must expose __cuda_array_interface__ "
-                    "(torch.Tensor on CUDA, cupy.ndarray, etc.)");
-
-            py::dict iface = gpu_array.attr("__cuda_array_interface__").cast<py::dict>();
-
-            // Shape check. We want the contents to fit into the source node exactly.
-            py::tuple shape_tuple = iface["shape"].cast<py::tuple>();
-            std::vector<int> shape;
-            for (auto s : shape_tuple) shape.push_back(s.cast<int>());
-
-            // ndim must match.
-            if ((int)shape.size() != n->get_ndim())
-                throw std::logic_error(
-                    "data_from_cuda: ndim mismatch (node has " +
-                    std::to_string(n->get_ndim()) + ", got " +
-                    std::to_string(shape.size()) + ")");
-
-            // Every dim must match. Could relax to size-match but explicit is safer.
-            for (int i = 0; i < (int)shape.size(); i++) {
-                if (shape[i] != n->get_shape()[i])
-                    throw std::logic_error(
-                        "data_from_cuda: shape mismatch at dim " + std::to_string(i));
-            }
-
-            // Dtype check. __cuda_array_interface__ gives a typestr like "<f4".
-            // We only handle float32.
-            std::string typestr = iface["typestr"].cast<std::string>();
-            // accept "<f4", "=f4", "f4" — second char is endian, last two are kind+size
-            if (typestr.size() < 3 ||
-                typestr[typestr.size() - 2] != 'f' ||
-                typestr[typestr.size() - 1] != '4')
-                throw std::logic_error(
-                    "data_from_cuda: only float32 supported, got typestr='" +
-                    typestr + "'");
-
-            // Extract device pointer.
-            py::tuple data_tuple = iface["data"].cast<py::tuple>();
-            float* src_ptr = reinterpret_cast<float*>(data_tuple[0].cast<uintptr_t>());
-            // data_tuple[1] is read-only flag, we don't care — we're just reading.
-
-            // Strides check. If the source tensor is non-contiguous (e.g. a sliced
-            // view with gaps), a flat d_to_d copy would read garbage.
-            // For contiguous tensors, __cuda_array_interface__ sets strides=None.
-            if (iface.contains("strides") && !iface["strides"].is_none()) {
-                // Compute what contiguous strides would be, compare.
-                py::tuple strides_tuple = iface["strides"].cast<py::tuple>();
-                std::vector<int> strides;
-                for (auto s : strides_tuple) strides.push_back(s.cast<int>());
-
-                int expected = sizeof(float);
-                bool contig = true;
-                for (int i = (int)shape.size() - 1; i >= 0; i--) {
-                    if (strides[i] != expected) { contig = false; break; }
-                    expected *= shape[i];
-                }
-                if (!contig)
-                    throw std::logic_error(
-                        "data_from_cuda: source tensor is non-contiguous. "
-                        "Call .contiguous() on it first.");
-            }
-
-            // Allocate d_data if the node doesn't have one yet. This handles
-            // the case where the user calls data_from_cuda before the graph
-            // has ever been evaluated.
-            if (!n->is_data()) n->d_data = make_shared<ContentData>();
-            if (!n->is_data_allocated()) n->d_data->allocate(n->get_size());
-
-            // The key bit: d_to_d writes INTO the existing buffer.
-            // ContentData::d_data pointer doesn't change. Graph's cached
-            // pointers remain valid.
-            n->d_data->d_to_d(src_ptr, n->get_size());
-        })
-
+        .def("data_from_numpy", &data_from_numpy, "Copies data host-to-device into node's existing buffer.\nAllocates a new buffer if node doesn't have one.")
+        .def("data_from_cuda", &data_from_cuda, "Copies data device-to-device into node's existing buffer.\nAllocates a new buffer if node doesn't have one.")
 
         // Unary ops
         .def("relu", [](const shared_ptr<Node>& n) { return relu(n); })
@@ -259,29 +227,36 @@ PYBIND11_MODULE(bobrito, m) {
             py::arg("dim") = 52, py::arg("keepdims") = false)
 
         // Shape ops
-        .def("reshape", [](const shared_ptr<Node>& n, vector<int> shape) { 
+        .def("reshape", [](const shared_ptr<Node>& n, vector<int> shape) {
             return reshape(n, shape.data(), shape.size()); })
         .def("contiguous", &contiguous);
 
-    
     // Graph wrapper
     py::class_<Graph, shared_ptr<Graph>>(m, "Graph")
         .def(py::init<shared_ptr<Node>, bool>(), py::arg("loss"), py::arg("disposable") = true)
-        .def_property_readonly("weights", [](shared_ptr<Graph>& g) { 
+        .def_property_readonly("weights", [](shared_ptr<Graph>& g) {
             py::list py_lst(g->require_grad_nodes.size());
             for (auto node : g->require_grad_nodes) {
                 DEBUG(node, "");
             }
             return py_lst;
         })
+        .def("train_step",
+            [](std::shared_ptr<Graph> g, std::shared_ptr<Optimizer> opt, bool graph) {
+            return std::make_shared<TrainStep>(g, opt, graph);
+            }, "Warmups, captures and replays a CUDA graph of the full model pass (fwd+bwd+optim step).\n Otherwise, falls back to the eager execution.",
+            py::arg("opt"), py::arg("graph") = true)
         .def("eval", &Graph::eval, py::arg("debug") = false)
         .def("fwd", &Graph::fwd_pass)
         .def("bwd", &Graph::bwd_pass)
         .def("build_backward", &Graph::backward)
         .def("fwd_bwd_pass", &Graph::fwd_bwd_pass)
         .def("detach_grads", [](shared_ptr<Graph>& g) { g->detach_grads_from_bwd_graph(); })
-        .def("clear_graph_data", &Graph::zero_nodes_data)
         .def("parameters", &Graph::parameters);
+
+    // TrainStep wrapper
+    py::class_<TrainStep, std::shared_ptr<TrainStep>>(m, "TrainStep")
+    .def("__call__", &TrainStep::operator());
 
     // Module wrappers
     py::class_<Module, shared_ptr<Module>>(m, "Module")
@@ -331,17 +306,22 @@ PYBIND11_MODULE(bobrito, m) {
         .def("step", &AdamW::step)
         .def("zero_grad", &AdamW::zero_grad);
 
-    // Creation ops
+    // CUDA Graph Capture wrapper
+    py::class_<CapturedStep, shared_ptr<CapturedStep>>(m, "CUDAGraph")
+        .def(py::init<>())
+        .def("capture", &CapturedStep::capture, "Captures kernels behind a function passed as an argument into a CUDA graph.")
+        .def("replay", &CapturedStep::replay, "Replays the earlier captured CUDA graph.");
 
-    m.def("empty", [](vector<int> shape) { 
-        auto node = make_node(&prim_leaf, {}, shape.data(), shape.size()); 
+    // Creation ops
+    m.def("empty", [](vector<int> shape) {
+        auto node = make_node(&prim_leaf, {}, shape.data(), shape.size());
         node->d_data->allocate(node->get_size());
         return node;
     }, py::arg("shape"));
     m.def("full", [](vector<int> shape, float value) { return full(shape, value); });
     m.def("arange", [](int start, int end, int step = 1) { return arange(start, end, step); },
           py::arg("start"), py::arg("end"), py::arg("step") = 1);
-    m.def("uniform", [](vector<int> shape, float limit = 1.0f) { return uniform(shape, limit); }, 
+    m.def("uniform", [](vector<int> shape, float limit = 1.0f) { return uniform(shape, limit); },
           py::arg("shape"), py::arg("limit") = 1.0f);
     m.def("xavier_uniform", [](vector<int> shape) { return xavier_uniform(shape); },
             py::arg("shape"));
@@ -349,7 +329,6 @@ PYBIND11_MODULE(bobrito, m) {
     m.def("kaiming_normal", [](vector<int> shape) { return kaiming_normal(shape); });
     m.def("normal", [](vector<int> shape, float mean = 0.0f, float std = 1.0f) { return normal(shape, mean, std); },
           py::arg("shape"), py::arg("mean") = 0.0f, py::arg("std") = 1.0f);
-    
 
     // Unary ops
     m.def("relu", [](shared_ptr<Node> a) { return relu(a); });
@@ -357,14 +336,14 @@ PYBIND11_MODULE(bobrito, m) {
     m.def("log", [](shared_ptr<Node> a) { return log(a); });
     m.def("neg", [](shared_ptr<Node> a) { return neg(a); });
     m.def("sqrt", [](shared_ptr<Node> a) { return sqrt(a); });
-    
+
     // Binary ops
     m.def("add", [](shared_ptr<Node> a, shared_ptr<Node> b) { return add(a, b); });
     m.def("sub", [](shared_ptr<Node> a, shared_ptr<Node> b) { return sub(a, b); });
     m.def("mul", [](shared_ptr<Node> a, shared_ptr<Node> b) { return mul(a, b); });
     m.def("div", [](shared_ptr<Node> a, shared_ptr<Node> b) { return div(a, b); });
     m.def("matmul", [](shared_ptr<Node> a, shared_ptr<Node> b) { return matmul(a, b); });
-    
+
     // Reduction ops
     m.def("sum_ld", &sum_ld);
     m.def("min_ld", &min_ld);
@@ -375,23 +354,23 @@ PYBIND11_MODULE(bobrito, m) {
           py::arg("a"), py::arg("dim") = 52, py::arg("keepdims") = false);
     m.def("max", [](shared_ptr<Node> a, int dim, bool keepdims = false) { return max(a, dim, keepdims); },
           py::arg("a"), py::arg("dim") = 52, py::arg("keepdims") = false);
-    
+
     // Shape ops
-    m.def("reshape", [](shared_ptr<Node> a, vector<int> shape) { 
-        return reshape(a, shape.data(), shape.size()); 
+    m.def("reshape", [](shared_ptr<Node> a, vector<int> shape) {
+        return reshape(a, shape.data(), shape.size());
     });
     m.def("contiguous", &contiguous);
-    
+
     // Layer ops
     m.def("linear", &linear);
-    
+
     // Activation ops
     m.def("softmax", &softmax);
 
     // Loss ops
     m.def("cross_entropy", &cross_entropy);
     m.def("cross_entropy_softmax", &cross_entropy_softmax);
-    
+
     // Training helpers
     m.def("eval", [](shared_ptr<Node> node, bool export_graph) { eval(node, export_graph); },
           py::arg("node"), py::arg("export_graph") = false);
@@ -400,8 +379,9 @@ PYBIND11_MODULE(bobrito, m) {
 
     m.def("make_model", &make_model);
 
-    m.def("sync", []() { CUDA_CHECK(); });
+    m.def("sync", []() { bobr::synchronize(); });
     m.def("mempool_stats", []() { cout << MemoryPool::call().stats() << endl; });
+    m.def("empty_cache", []() { MemoryPool::call().empty_cache(); });
     m.def("mem_snapshot", [](){
         auto s = snapshot();
         print_snapshot("VRAM SUMMARY", s);
@@ -416,8 +396,6 @@ PYBIND11_MODULE(bobrito, m) {
         float* h_data = static_cast<float*>(info.ptr);
         auto node = _make_leaf_node_from_h_data((float*)h_data, shape);
         node->requires_grad = requires_grad;
-        cudaDeviceSynchronize();
         return node;
     }, py::arg("arr"), py::arg("requires_grad") = false);
 }
-

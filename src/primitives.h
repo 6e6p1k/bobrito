@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include "nodes.h"
+#include "stream.h"
 
 enum class PrimCategory {
     Leaf,

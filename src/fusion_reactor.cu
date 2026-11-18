@@ -6,6 +6,7 @@
 
 #include "kernels.cuh"
 #include "fusion_reactor.cuh"
+#include "stream.h"
 
 #define NVRTC_CHECK(x) do { nvrtcResult r = (x); \
     if (r != NVRTC_SUCCESS) { std::cerr << "NVRTC err @" << __LINE__ << ": " << nvrtcGetErrorString(r) << "\n"; std::exit(1); } } while(0)
@@ -42,7 +43,7 @@ void FusionReactor::launch_kernel(CUfunction func, void** args, int n) {
             func, 
             GRID_SIZE(n),1,1, 
             BLOCK_SIZE,1,1, 
-            0, nullptr, args, nullptr
+            0, bobr::current_stream(), args, nullptr
         ));
 }
 

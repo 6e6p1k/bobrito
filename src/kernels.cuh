@@ -6,7 +6,7 @@
 #define BLOCK_SIZE 256
 
 
-// elemwise 
+// elemwise
 struct cuAdd { __device__ static float apply(float a, float b) { return a + b; } };
 struct cuMul { __device__ static float apply(float a, float b) { return a * b; } };
 struct cuSub { __device__ static float apply(float a, float b) { return a - b; } };
@@ -68,6 +68,7 @@ __global__ void unary(float* in, float* out, int n) {
     if (i < n) out[i] = Op::apply(in[i]);
 }
 
+__global__ void increment(float* d_t);
 __global__ void fill(float* data, float val, int n);
 __global__ void arange(float* data, float start, float step, int n);
 __global__ void copy(float* src, float* dst, int n);
@@ -95,10 +96,6 @@ __global__ void adamw(
     const float* __restrict__ grad,
     float* __restrict__ m,
     float* __restrict__ v,
-    float lr, float lr_t, float beta1, float beta2, float eps, float wd,
+    float lr, const float* t, float beta1, float beta2, float eps, float wd,
     int n);
-
-
-
-
 }

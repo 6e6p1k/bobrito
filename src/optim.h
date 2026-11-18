@@ -1,11 +1,15 @@
 #pragma once
+#include <cuda_runtime_api.h>
 #include <memory>
+#include <stdexcept>
 #include <vector>
+#include <string>
 
 #include "allocator.cuh"
 #include "nodes.h"
 #include "ops.h"
 #include "evaluate.h"
+#include "stream.h"
 
 // -----------------------------------------------------------------
 //                        OPTIM
@@ -52,12 +56,21 @@ struct AdamSlot {
     {
         m.allocate(param->get_size());
         v.allocate(param->get_size());
+        cudaError_t err_m = cudaMemsetAsync(m.data(), 0, m.bytes(), bobr::current_stream());
+        cudaError_t err_v = cudaMemsetAsync(v.data(), 0, v.bytes(), bobr::current_stream());
+        if (err_m != cudaSuccess) throw std::runtime_error(
+            std::string("Failed to zero AdamSlot.m: ") + cudaGetErrorString(err_m)
+        );
+        if (err_v != cudaSuccess) throw std::runtime_error(
+            std::string("Failed to zero AdamSlot.v: ") + cudaGetErrorString(err_v)
+        );
     }
 };
 
 class AdamW : public Optimizer {
-    float lr_, lr_t, beta1_, beta2_, eps_, wd_;
-    int t_ = 0;
+    float lr_, beta1_, beta2_, eps_, wd_;
+    float* d_t = nullptr; // lives on GPU to use cuda graph
+    // lr stays on CPU for now, should only be transferred to GPU when implementing scheduling
     std::vector<AdamSlot> slots_;
 
     // parallel to params_
@@ -71,4 +84,5 @@ public:
     void step() override;
     void zero_grad() override;
     const char* name() const override { return "Adam"; }
+    ~AdamW() override;
 };
