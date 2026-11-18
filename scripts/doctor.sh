@@ -126,7 +126,7 @@ if $JSON; then
   for i in "${!lines[@]}"; do
     IFS='|' read -r level name msg <<< "${lines[$i]}"
     ok="true"
-    [[ "$level" == "fail" ]] && ok="false" || true
+    if [[ "$level" == "fail" ]]; then ok="false"; fi
     msg_json=$(printf '%s' "$msg" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
     printf '  {"id":%s,"level":%s,"message":%s,"ok":%s}' \
       "$(printf '%s' "$name" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \

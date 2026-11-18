@@ -25,7 +25,7 @@ fi
 
 if [[ -f compile_commands.json ]]; then
   echo "✓ compile_commands.json written ($(wc -l < compile_commands.json) lines)"
-  echo "  Restart clangd in Cursor: Command Palette → 'clangd: Restart language server'"
+  echo "  Restart clangd (e.g. 'clangd: Restart language server')"
 else
   echo "✗ compile_commands.json not created" >&2
   exit 1

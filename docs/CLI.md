@@ -24,7 +24,7 @@ Everything lives in the repo-local `.venv`; nothing is installed system-wide and
 | `./bobr install` | Create `.venv`, pip install `requirements-dev.txt`, run `install-cuda`, create `config.mk`, dev-panel npm install |
 | `./bobr install-cuda` | CUDA 13.2 toolkit (nvcc, cuBLAS, cuRAND, NVRTC, CUB) from NVIDIA's pip wheels into `.venv`, assembled as `.venv/cuda` |
 | `./bobr install-cuda --check` | Verify the toolkit make will use (headers and libraries) |
-| `./bobr configure` | Generate `compile_commands.json` (clangd / Cursor) |
+| `./bobr configure` | Generate `compile_commands.json` (for clangd) |
 | `./bobr configure-cuda` | Use the `.venv` toolkit (drops CUDA overrides from `config.mk`) |
 | `./bobr configure-cuda --system` | Use a system toolkit (`/usr/local/cuda`), written into `config.mk` |
 | `./bobr doctor` | Health check: venv, torch, toolkit, GPU_ARCH, import bobrito, IDE db, stale builds |
@@ -33,7 +33,7 @@ Everything lives in the repo-local `.venv`; nothing is installed system-wide and
 | `./bobr build primitives` | Recompile one `.o` (then rebuild python to link) |
 | `./bobr build clean` | `make clean` |
 | `./bobr test smoke` | Gradient checks against torch (`test_gradients.py`) |
-| `./bobr test full` | Smoke + the older suites (not yet ported to the Graph API) + C++ general_test |
+| `./bobr test full` | Smoke + ops vs torch, shapes, advanced ops + C++ general_test and new_test |
 | `./bobr run-script <path>` | Run a script with the venv Python and `python/` on the path |
 | `./bobr ui` | Web dev panel at http://localhost:1420 |
 
@@ -56,9 +56,9 @@ make -s print-PYTHON
 
 Ubuntu's apt `nvidia-cuda-toolkit` (12.0) cannot target sm_120; an `nvcc` on PATH is ignored unless `CUDA_HOME` points at it.
 
-## IDE (Cursor / clangd)
+## IDE (clangd)
 
-1. Install **clangd** extension; MS C/C++ IntelliSense is disabled in `.vscode/settings.json`
+1. Use clangd as the C++/CUDA language server (Zed uses it by default; in VS Code/Cursor install the **clangd** extension, MS C/C++ IntelliSense is disabled in `.vscode/settings.json`)
 2. `./bobr configure`
 3. Restart language server: *clangd: Restart language server*
 

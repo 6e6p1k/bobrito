@@ -24,9 +24,9 @@ Python, torch and the CUDA 13.2 toolkit all live in the repo-local `.venv` (`./b
 | Suite | Command | Includes |
 |-------|---------|----------|
 | smoke | `./bobr test smoke` | gradients vs torch (`test_gradients.py`) |
-| full | `./bobr test full` | smoke + ops vs torch + shapes + advanced (not yet ported to the Graph API) + general_test |
+| full | `./bobr test full` | smoke + ops vs torch + shapes + advanced + general_test + new_test |
 
-Legacy / debug scripts live at repo root (`debug_*.py`) or `python/tests/mini_tests*.py` — not in official suites.
+Legacy / debug scripts live at repo root (`debug_*.py`) — not in official suites. Broken old tests are kept in `tests/legacy/` and `python/tests/legacy/`.
 
 ## Dev panel
 
@@ -41,7 +41,7 @@ Buttons call `./bobr` — same as CLI. See `dev-panel/manifest.json`.
 ## Remote GPU (Mac → Linux pod)
 
 1. Clone repo on the GPU machine
-2. Cursor Remote SSH into the pod
+2. Remote SSH into the pod
 3. `./bobr install && ./bobr configure && ./bobr build python`
 4. `./bobr ui` — use forwarded port in browser on Mac
 
