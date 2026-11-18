@@ -29,8 +29,7 @@ case "$SUITE" in
     ;;
   full)
     run_py python/tests/test_gradients.py || failed=1
-    # Older suites (2026-04-15) still build inputs with bobr.full + steal_data and use the
-    # pre-Graph backward API, so they fail until ported
+    # Op-by-op checks vs torch (forward + backward), shape/reduction checks, and the C++ suite
     run_py python/tests/test_ops_vs_torch.py || failed=1
     run_py python/tests/test_shapes.py || failed=1
     run_py python/tests/test_advanced_ops.py || failed=1

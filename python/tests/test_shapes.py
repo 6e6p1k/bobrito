@@ -25,8 +25,7 @@ class ReshapeTest:
             data = np.random.randn(*self.orig_shape).astype(np.float32)
             
             # BOBR forward
-            x_bobr = bobr.full(list(self.orig_shape), 0.0)
-            x_bobr.steal_data(torch.from_numpy(data).cuda())
+            x_bobr = bobr.from_numpy(data)
             y_bobr = x_bobr.reshape(self.new_shape)
             y_bobr.eval()
             y_bobr_out = np.array(y_bobr.data)
@@ -45,11 +44,9 @@ class ReshapeTest:
                 return False
             
             # BOBR backward - eval() does both forward and backward
-            x_bobr_req = bobr.full(list(self.orig_shape), 0.0)
-            x_bobr_req.steal_data(torch.from_numpy(data.copy()).cuda())
+            x_bobr_req = bobr.from_numpy(data, requires_grad=True)
             y_bobr_req = x_bobr_req.reshape(self.new_shape)
             loss_bobr = bobr.sum(y_bobr_req, 0, False)
-            loss_bobr.build_backward()
             loss_bobr.eval()
             grad_bobr = np.array(x_bobr_req.grad)
             
@@ -106,8 +103,7 @@ class ReductionDimTest:
                 return False
             
             # BOBR forward
-            x_bobr = bobr.full(list(self.shape), 0.0)
-            x_bobr.steal_data(torch.from_numpy(data).cuda())
+            x_bobr = bobr.from_numpy(data)
             y_bobr = bobr_op(x_bobr, self.dim, False)
             y_bobr.eval()
             y_bobr_out = np.array(y_bobr.data)
@@ -129,11 +125,10 @@ class ReductionDimTest:
                 return False
             
             # BOBR backward - eval() does both forward and backward
-            x_bobr_req = bobr.full(list(self.shape), 0.0)
-            x_bobr_req.steal_data(torch.from_numpy(data.copy()).cuda())
+            x_bobr_req = bobr.from_numpy(data, requires_grad=True)
             y_bobr_req = bobr_op(x_bobr_req, self.dim, False)
-            loss_bobr = bobr.sum(y_bobr_req, 0, False)
-            loss_bobr.build_backward()
+            # a 1-D input reduces to a scalar already; bobr.sum on a 0-d node crashes (SIGFPE)
+            loss_bobr = bobr.sum(y_bobr_req, 0, False) if y_bobr_req.ndim > 0 else y_bobr_req
             loss_bobr.eval()
             grad_bobr = np.array(x_bobr_req.grad)
             
@@ -176,8 +171,7 @@ class ContiguousTest:
             data = np.random.randn(*shape).astype(np.float32)
             
             # BOBR: reshape and contiguous
-            x_bobr = bobr.full(list(shape), 0.0)
-            x_bobr.steal_data(torch.from_numpy(data.copy()).cuda())
+            x_bobr = bobr.from_numpy(data)
             y_bobr = bobr.contiguous(x_bobr)  # Should not change anything for normal arrays
             y_bobr.eval()
             y_bobr_out = np.array(y_bobr.data)
@@ -188,11 +182,9 @@ class ContiguousTest:
                 return False
             
             # Test backward - eval() does both forward and backward
-            x_bobr_req = bobr.full(list(shape), 0.0)
-            x_bobr_req.steal_data(torch.from_numpy(data.copy()).cuda())
+            x_bobr_req = bobr.from_numpy(data, requires_grad=True)
             y_bobr_req = bobr.contiguous(x_bobr_req)
             loss_bobr = bobr.sum(y_bobr_req, 0, False)
-            loss_bobr.build_backward()
             loss_bobr.eval()
             grad_bobr = np.array(x_bobr_req.grad)
             

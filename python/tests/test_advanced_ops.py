@@ -12,7 +12,7 @@ import bobrito as bobr
 class NumericalGradientTest:
     """Test gradients against numerical gradients (finite differences)."""
     
-    def __init__(self, name, shape=(2, 3), eps=1e-5):
+    def __init__(self, name, shape=(2, 3), eps=1e-3):  # bobr is float32: with 1e-5 the round-off in f(x+eps)-f(x-eps) swamps the slope
         self.name = name
         self.shape = shape
         self.eps = eps
@@ -55,8 +55,7 @@ class NumericalGradientTest:
         
         # Numerical gradient
         def relu_func(x):
-            x_bobr = bobr.full(list(self.shape), 0.0)
-            x_bobr.steal_data(torch.from_numpy(x).cuda())
+            x_bobr = bobr.from_numpy(x)
             y_bobr = bobr.relu(x_bobr)
             y_bobr.eval()
             return np.array(y_bobr.data).sum()
@@ -83,8 +82,7 @@ class NumericalGradientTest:
         analytical_grad = x_torch.grad.cpu().numpy()
         
         def exp_func(x):
-            x_bobr = bobr.full(list(self.shape), 0.0)
-            x_bobr.steal_data(torch.from_numpy(x).cuda())
+            x_bobr = bobr.from_numpy(x)
             y_bobr = bobr.exp(x_bobr)
             y_bobr.eval()
             return np.array(y_bobr.data).sum()
@@ -117,10 +115,8 @@ class NumericalGradientTest:
         
         # Numerical for A
         def matmul_func_a(a):
-            a_bobr = bobr.full([m, k], 0.0)
-            b_bobr = bobr.full([k, n], 0.0)
-            a_bobr.steal_data(torch.from_numpy(a).cuda())
-            b_bobr.steal_data(torch.from_numpy(data_b).cuda())
+            a_bobr = bobr.from_numpy(a)
+            b_bobr = bobr.from_numpy(data_b)
             c_bobr = bobr.matmul(a_bobr, b_bobr)
             c_bobr.eval()
             return np.array(c_bobr.data).sum()
@@ -133,10 +129,8 @@ class NumericalGradientTest:
         
         # Numerical for B
         def matmul_func_b(b):
-            a_bobr = bobr.full([m, k], 0.0)
-            b_bobr = bobr.full([k, n], 0.0)
-            a_bobr.steal_data(torch.from_numpy(data_a).cuda())
-            b_bobr.steal_data(torch.from_numpy(b).cuda())
+            a_bobr = bobr.from_numpy(data_a)
+            b_bobr = bobr.from_numpy(b)
             c_bobr = bobr.matmul(a_bobr, b_bobr)
             c_bobr.eval()
             return np.array(c_bobr.data).sum()
@@ -170,13 +164,10 @@ class ChainedOpTest:
         data_b = np.random.randn(2, 3).astype(np.float32)
         
         # BOBR - eval() does both forward and backward
-        a_bobr = bobr.full([2, 3], 0.0)
-        b_bobr = bobr.full([2, 3], 0.0)
-        a_bobr.steal_data(torch.from_numpy(data_a.copy()).cuda())
-        b_bobr.steal_data(torch.from_numpy(data_b.copy()).cuda())
+        a_bobr = bobr.from_numpy(data_a, requires_grad=True)
+        b_bobr = bobr.from_numpy(data_b, requires_grad=True)
         y_bobr = bobr.add(bobr.relu(a_bobr), bobr.relu(b_bobr))
         loss_bobr = bobr.sum(y_bobr, 0, False)
-        loss_bobr.build_backward()
         loss_bobr.eval()
         y_bobr_np = np.array(y_bobr.data)
         grad_a_bobr = np.array(a_bobr.grad)
@@ -211,15 +202,11 @@ class ChainedOpTest:
         data_c = np.random.randn(3, 2).astype(np.float32)
         
         # BOBR - eval() does both forward and backward
-        a_bobr = bobr.full([3, 4], 0.0)
-        b_bobr = bobr.full([4, 2], 0.0)
-        c_bobr = bobr.full([3, 2], 0.0)
-        a_bobr.steal_data(torch.from_numpy(data_a.copy()).cuda())
-        b_bobr.steal_data(torch.from_numpy(data_b.copy()).cuda())
-        c_bobr.steal_data(torch.from_numpy(data_c.copy()).cuda())
+        a_bobr = bobr.from_numpy(data_a, requires_grad=True)
+        b_bobr = bobr.from_numpy(data_b, requires_grad=True)
+        c_bobr = bobr.from_numpy(data_c, requires_grad=True)
         y_bobr = bobr.mul(bobr.matmul(a_bobr, b_bobr), c_bobr)
         loss_bobr = bobr.sum(y_bobr, 0, False)
-        loss_bobr.build_backward()
         loss_bobr.eval()
         y_bobr_np = np.array(y_bobr.data)
         grad_a_bobr = np.array(a_bobr.grad)
@@ -241,11 +228,12 @@ class ChainedOpTest:
         grad_b_torch = b_torch.grad
         grad_c_torch = c_torch.grad
         
-        # Compare
-        if not (self.allclose(y_bobr_np, y_torch_np, rtol=1e-3) and 
-                self.allclose(grad_a_bobr, grad_a_torch, rtol=1e-3) and
-                self.allclose(grad_b_bobr, grad_b_torch, rtol=1e-3) and
-                self.allclose(grad_c_bobr, grad_c_torch, rtol=1e-3)):
+        # Compare (loose: bobr's matmul runs in TF32, torch here in full FP32)
+        tol = dict(rtol=1e-2, atol=1e-2)
+        if not (self.allclose(y_bobr_np, y_torch_np, **tol) and
+                self.allclose(grad_a_bobr, grad_a_torch, **tol) and
+                self.allclose(grad_b_bobr, grad_b_torch, **tol) and
+                self.allclose(grad_c_bobr, grad_c_torch, **tol)):
             self.error_msg = "Forward or backward mismatch"
             return False
         
@@ -259,15 +247,11 @@ class ChainedOpTest:
         data_c = np.random.uniform(0.1, 2, (2, 3)).astype(np.float32)
         
         # BOBR - eval() does both forward and backward
-        a_bobr = bobr.full([2, 3], 0.0)
-        b_bobr = bobr.full([2, 3], 0.0)
-        c_bobr = bobr.full([2, 3], 0.0)
-        a_bobr.steal_data(torch.from_numpy(data_a.copy()).cuda())
-        b_bobr.steal_data(torch.from_numpy(data_b.copy()).cuda())
-        c_bobr.steal_data(torch.from_numpy(data_c.copy()).cuda())
+        a_bobr = bobr.from_numpy(data_a, requires_grad=True)
+        b_bobr = bobr.from_numpy(data_b, requires_grad=True)
+        c_bobr = bobr.from_numpy(data_c, requires_grad=True)
         y_bobr = bobr.mul(bobr.add(bobr.exp(a_bobr), b_bobr), c_bobr)
         loss_bobr = bobr.sum(y_bobr, 0, False)
-        loss_bobr.build_backward()
         loss_bobr.eval()
         grad_a_bobr = np.array(a_bobr.grad)
         grad_b_bobr = np.array(b_bobr.grad)

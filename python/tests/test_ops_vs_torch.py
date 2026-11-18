@@ -44,7 +44,7 @@ class OpTest:
             self.backward_pass()
             self.passed = True
             return f"✓ {self.name}"
-        except AssertionError as e:
+        except Exception as e:  # a bobr error (e.g. missing grad) fails this test, not the suite
             self.error_msg = str(e)
             return f"✗ {self.name}: {self.error_msg}"
     
@@ -70,9 +70,8 @@ class UnaryOpTest(OpTest):
         # Create test data in positive range to avoid issues with log/sqrt
         data = np.random.uniform(0.1, 2.0, self.shape).astype(np.float32)
         
-        # BOBR forward - need to create scalar loss and call build_backward for eval() to work
-        x_bobr = bobr.full(list(self.shape), 0.0)
-        x_bobr.steal_data(torch.from_numpy(data).cuda())
+        # BOBR forward - eval() runs forward and backward
+        x_bobr = bobr.from_numpy(data, requires_grad=True)
         y_bobr = self.bobr_op(x_bobr)
         loss_bobr = bobr.sum(y_bobr, 0, False)
         loss_bobr.eval()
@@ -92,13 +91,12 @@ class UnaryOpTest(OpTest):
         data = np.random.uniform(0.1, 2.0, self.shape).astype(np.float32)
         
         # BOBR backward - eval() does both forward and backward
-        x_bobr = bobr.full(list(self.shape), 0.0)
-        x_bobr.steal_data(torch.from_numpy(data.copy()).cuda())
+        x_bobr = bobr.from_numpy(data, requires_grad=True)
         y_bobr = self.bobr_op(x_bobr)
         loss_bobr = bobr.sum(y_bobr, 0, False)
         loss_bobr.eval()
         bobr.sync()
-        grad_bobr = np.array(x_bobr.grad) if x_bobr.requires_grad else None
+        grad_bobr = np.array(x_bobr.grad)
         
         # PyTorch backward
         x_torch = torch.from_numpy(data).cuda()
@@ -129,11 +127,9 @@ class BinaryOpTest(OpTest):
         data_a = np.random.uniform(0.1, 2.0, self.shape_a).astype(np.float32)
         data_b = np.random.uniform(0.1, 2.0, self.shape_b).astype(np.float32)
         
-        # BOBR forward - need scalar loss and build_backward for eval() to work
-        a_bobr = bobr.full(list(self.shape_a), 0.0)
-        b_bobr = bobr.full(list(self.shape_b), 0.0)
-        a_bobr.steal_data(torch.from_numpy(data_a).cuda())
-        b_bobr.steal_data(torch.from_numpy(data_b).cuda())
+        # BOBR forward - eval() runs forward and backward
+        a_bobr = bobr.from_numpy(data_a, requires_grad=True)
+        b_bobr = bobr.from_numpy(data_b, requires_grad=True)
         c_bobr = self.bobr_op(a_bobr, b_bobr)
         loss_bobr = bobr.sum(c_bobr, 0, False)
         loss_bobr.eval()
@@ -155,16 +151,14 @@ class BinaryOpTest(OpTest):
         data_b = np.random.uniform(0.1, 2.0, self.shape_b).astype(np.float32)
         
         # BOBR backward - eval() does both forward and backward
-        a_bobr = bobr.full(list(self.shape_a), 0.0)
-        b_bobr = bobr.full(list(self.shape_b), 0.0)
-        a_bobr.steal_data(torch.from_numpy(data_a.copy()).cuda())
-        b_bobr.steal_data(torch.from_numpy(data_b.copy()).cuda())
+        a_bobr = bobr.from_numpy(data_a, requires_grad=True)
+        b_bobr = bobr.from_numpy(data_b, requires_grad=True)
         c_bobr = self.bobr_op(a_bobr, b_bobr)
         loss_bobr = bobr.sum(c_bobr, 0, False)
         loss_bobr.eval()  # Does both forward and backward
         bobr.sync()
-        grad_a_bobr = np.array(a_bobr.grad) if a_bobr.requires_grad else None
-        grad_b_bobr = np.array(b_bobr.grad) if b_bobr.requires_grad else None
+        grad_a_bobr = np.array(a_bobr.grad)
+        grad_b_bobr = np.array(b_bobr.grad)
         
         # PyTorch backward
         a_torch = torch.from_numpy(data_a).cuda()
@@ -190,7 +184,9 @@ class MatmulTest(OpTest):
     """Test matrix multiplication."""
     
     def __init__(self, name="matmul", m=4, k=5, n=3):
-        super().__init__(name)
+        # bobr's cuBLAS runs in TF32 (10-bit mantissa), torch here in full FP32: error grows with k
+        tf32 = 1e-2
+        super().__init__(name, {'rtol_fwd': tf32, 'atol_fwd': tf32, 'rtol_bwd': tf32, 'atol_bwd': tf32})
         self.m = m
         self.k = k
         self.n = n
@@ -199,11 +195,9 @@ class MatmulTest(OpTest):
         data_a = np.random.randn(self.m, self.k).astype(np.float32)
         data_b = np.random.randn(self.k, self.n).astype(np.float32)
         
-        # BOBR - need scalar loss and build_backward for eval() to work
-        a_bobr = bobr.full([self.m, self.k], 0.0)
-        b_bobr = bobr.full([self.k, self.n], 0.0)
-        a_bobr.steal_data(torch.from_numpy(data_a).cuda())
-        b_bobr.steal_data(torch.from_numpy(data_b).cuda())
+        # BOBR - eval() runs forward and backward
+        a_bobr = bobr.from_numpy(data_a, requires_grad=True)
+        b_bobr = bobr.from_numpy(data_b, requires_grad=True)
         c_bobr = bobr.matmul(a_bobr, b_bobr)
         loss_bobr = bobr.sum(c_bobr, 0, False)
         loss_bobr.eval()
@@ -223,10 +217,8 @@ class MatmulTest(OpTest):
         data_b = np.random.randn(self.k, self.n).astype(np.float32)
         
         # BOBR - eval() does both forward and backward
-        a_bobr = bobr.full([self.m, self.k], 0.0)
-        b_bobr = bobr.full([self.k, self.n], 0.0)
-        a_bobr.steal_data(torch.from_numpy(data_a.copy()).cuda())
-        b_bobr.steal_data(torch.from_numpy(data_b.copy()).cuda())
+        a_bobr = bobr.from_numpy(data_a, requires_grad=True)
+        b_bobr = bobr.from_numpy(data_b, requires_grad=True)
         c_bobr = bobr.matmul(a_bobr, b_bobr)
         loss_bobr = bobr.sum(c_bobr, 0, False)
         loss_bobr.eval()
@@ -265,9 +257,8 @@ class ReductionOpTest(OpTest):
     def forward_pass(self):
         data = np.random.randn(*self.shape).astype(np.float32)
         
-        # BOBR - need scalar loss and build_backward for eval() to work
-        x_bobr = bobr.full(list(self.shape), 0.0)
-        x_bobr.steal_data(torch.from_numpy(data).cuda())
+        # BOBR - eval() runs forward and backward
+        x_bobr = bobr.from_numpy(data, requires_grad=True)
         y_bobr = self.bobr_op(x_bobr, self.dim, self.keepdims)
         loss_bobr = bobr.sum(y_bobr, 0, False)
         loss_bobr.eval()
@@ -288,8 +279,7 @@ class ReductionOpTest(OpTest):
         data = np.random.randn(*self.shape).astype(np.float32)
         
         # BOBR - eval() does both forward and backward
-        x_bobr = bobr.full(list(self.shape), 0.0)
-        x_bobr.steal_data(torch.from_numpy(data.copy()).cuda())
+        x_bobr = bobr.from_numpy(data, requires_grad=True)
         y_bobr = self.bobr_op(x_bobr, self.dim, self.keepdims)
         loss_bobr = bobr.sum(y_bobr, 0, False)
         loss_bobr.eval()
