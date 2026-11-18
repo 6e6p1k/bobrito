@@ -16,7 +16,7 @@ CUDA_LIB_DIR ?= $(CUDA_HOME)/lib64
 CXX          := g++
 
 # Host + device flags
-CXXFLAGS   := -std=c++17 -Isrc -MMD -MP
+CXXFLAGS   := -std=c++17 -Isrc -I$(CUDA_HOME)/include -MMD -MP
 NVCCFLAGS  := -std=c++17 -Isrc \
               -arch=$(GPU_ARCH) -lineinfo \
               -I$(CUDA_HOME)/include \

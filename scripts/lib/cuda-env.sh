@@ -96,19 +96,31 @@ bobr_cuda_preflight() {
 }
 
 # 0 = the toolkit's nvcc accepts GPU_ARCH, 1 = not
+# Probe-compile an empty .cu with -arch=$arch. On failure the compiler's output is kept in
+# BOBR_ARCH_PROBE_ERR: a failure is not always an unsupported arch (e.g. a host-header /
+# toolkit mismatch), so callers print it instead of guessing.
+BOBR_ARCH_PROBE_ERR=""
 bobr_check_gpu_arch() {
   local root="${1:?root}" arch="${2:?arch}"
   local nvcc tmp
+  BOBR_ARCH_PROBE_ERR=""
   nvcc="$(bobr_nvcc "$root")"
   [[ -x "$nvcc" ]] || return 1
   tmp="$(mktemp /tmp/bobr-nvcc-arch-XXXX.cu)"
   echo "// arch probe" > "$tmp"
-  if "$nvcc" -std=c++17 -arch="$arch" -c "$tmp" -o "${tmp}.o" 2>/dev/null; then
+  if BOBR_ARCH_PROBE_ERR="$("$nvcc" -std=c++17 -arch="$arch" -c "$tmp" -o "${tmp}.o" 2>&1)"; then
+    BOBR_ARCH_PROBE_ERR=""
     rm -f "$tmp" "${tmp}.o"
     return 0
   fi
   rm -f "$tmp" "${tmp}.o"
   return 1
+}
+
+# Compiler output from the last failed bobr_check_gpu_arch, indented, first lines only.
+bobr_arch_probe_error() {
+  [[ -n "$BOBR_ARCH_PROBE_ERR" ]] || return 0
+  printf '%s\n' "$BOBR_ARCH_PROBE_ERR" | head -n 12 | sed 's/^/    /'
 }
 
 bobr_suggest_gpu_arch() {

@@ -7,7 +7,7 @@ All dev workflows go through `./bobr`. The web dev panel calls these same comman
 ```bash
 git clone https://github.com/6e6p1k/bobrito
 cd bobrito
-./bobr install                   # .venv: torch (CUDA 13.0), pybind11, CUDA 13.0 toolkit; creates config.mk
+./bobr install                   # .venv: torch (CUDA 13.2), pybind11, CUDA 13.2 toolkit; creates config.mk
 ./bobr doctor
 ./bobr build python
 ./bobr test smoke
@@ -15,14 +15,14 @@ cd bobrito
 ./bobr ui                        # optional web panel
 ```
 
-Everything lives in the repo-local `.venv`; nothing is installed system-wide and no sudo is needed. The only system requirements are the NVIDIA driver, `python3`, `make` and `g++`.
+Everything lives in the repo-local `.venv`; nothing is installed system-wide and no sudo is needed. The only system requirements are the NVIDIA driver, `python3`, `make` and `g++`, plus **Graphviz** (the `dot` binary) for graph export: `sudo apt install graphviz`. Without it, `./bobr test smoke` fails with `sh: dot: not found` / `Graph export failed.`
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `./bobr install` | Create `.venv`, pip install `requirements-dev.txt`, run `install-cuda`, create `config.mk`, dev-panel npm install |
-| `./bobr install-cuda` | CUDA 13.0 toolkit (nvcc, cuBLAS, cuRAND, NVRTC, CUB) from NVIDIA's pip wheels into `.venv`, assembled as `.venv/cuda` |
+| `./bobr install-cuda` | CUDA 13.2 toolkit (nvcc, cuBLAS, cuRAND, NVRTC, CUB) from NVIDIA's pip wheels into `.venv`, assembled as `.venv/cuda` |
 | `./bobr install-cuda --check` | Verify the toolkit make will use (headers and libraries) |
 | `./bobr configure` | Generate `compile_commands.json` (clangd / Cursor) |
 | `./bobr configure-cuda` | Use the `.venv` toolkit (drops CUDA overrides from `config.mk`) |

@@ -22,6 +22,10 @@ if ! bobr_check_gpu_arch "$ROOT" "$gpu_arch"; then
   if [[ -n "$compute_cap" ]]; then
     echo "  GPU compute capability: ${compute_cap} (try GPU_ARCH ?= $(bobr_suggest_gpu_arch "$compute_cap") in config.mk)" >&2
   fi
+  if [[ -n "$BOBR_ARCH_PROBE_ERR" ]]; then
+    echo "  nvcc probe output (the failure may not be the arch itself):" >&2
+    bobr_arch_probe_error >&2
+  fi
   echo "  Run ./bobr doctor for full diagnostics." >&2
   exit 1
 fi

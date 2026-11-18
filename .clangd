@@ -4,6 +4,8 @@ CompileFlags:
   Add:
     - -std=c++17
     - -Isrc
+    - --cuda-path=.venv/cuda
+    - -isystem.venv/cuda/include/cccl
     - --cuda-gpu-arch=sm_120
   Remove:
     - -forward-unknown-to-host-compiler
@@ -14,6 +16,9 @@ CompileFlags:
 
 # clangd 23 ignores --clang-tidy-checks; readability-* lives here.
 Diagnostics:
+  # CUDA 13 CCCL headers trip this under clang; not our code.
+  Suppress:
+    - deduction_guide_target_attr
   ClangTidy:
     Remove:
       - "*"
@@ -24,3 +29,11 @@ InlayHints:
   Enabled: true
   ParameterNames: true
   DeducedTypes: true
+
+---
+# .cuh headers borrow a .cpp command (-x c++-header); force CUDA mode.
+If:
+  PathMatch: .*\.cuh
+CompileFlags:
+  Add:
+    - -xcuda

@@ -83,6 +83,8 @@ if [[ -x "$nvcc" ]]; then
     if [[ -n "$compute_cap" ]]; then
       hint="${hint} — GPU compute ${compute_cap}, try GPU_ARCH ?= $(bobr_suggest_gpu_arch "$compute_cap") in config.mk"
     fi
+    probe_err="$(bobr_arch_probe_error)"
+    [[ -n "$probe_err" ]] && hint="${hint}"$'\n'"  nvcc probe output (the failure may not be the arch itself):"$'\n'"${probe_err}"
     record fail gpu_arch "$hint"
   fi
 fi

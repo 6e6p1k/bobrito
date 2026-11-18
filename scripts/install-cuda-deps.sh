@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install the CUDA toolkit bobrito builds against into the repo-local .venv, from NVIDIA's
-# pip wheels (CUDA 13.0: nvcc, cuBLAS, cuRAND, NVRTC, CUB/CCCL). No sudo, works for sm_120.
+# pip wheels (CUDA 13.2: nvcc, cuBLAS, cuRAND, NVRTC, CUB/CCCL). No sudo, works for sm_120.
 # Then assemble $(VENV)/cuda with the usual bin/ include/ lib64/ layout that the Makefile expects.
 #
 # Usage:

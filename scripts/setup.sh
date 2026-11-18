@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ./bobr install — everything into the repo-local .venv:
 #   1. create .venv (falls back to --without-pip when python3-venv/ensurepip is missing)
-#   2. pip install -r requirements-dev.txt (torch for CUDA 13.0, pybind11, numpy, compiledb)
-#   3. ./bobr install-cuda (CUDA 13.0 toolkit from pip wheels, assembled as .venv/cuda)
+#   2. pip install -r requirements-dev.txt (torch for CUDA 13.2, pybind11, numpy, compiledb)
+#   3. ./bobr install-cuda (CUDA 13.2 toolkit from pip wheels, assembled as .venv/cuda)
 #   4. config.mk from config.mk.example if missing; dev-panel npm install if the panel is present
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

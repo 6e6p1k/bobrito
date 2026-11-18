@@ -1,5 +1,6 @@
 #include "graph_viz.h"
 #include "nodes.h"
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <sstream>

@@ -17,7 +17,7 @@ Always run `./bobr build python` after logic changes. Use `./bobr doctor` to cat
 
 ## Toolchain
 
-Python, torch and the CUDA 13.0 toolkit all live in the repo-local `.venv` (`./bobr install`); make resolves the paths from `config.mk` over `config.mk.example`. See [CLI.md](CLI.md).
+Python, torch and the CUDA 13.2 toolkit all live in the repo-local `.venv` (`./bobr install`); make resolves the paths from `config.mk` over `config.mk.example`. See [CLI.md](CLI.md).
 
 ## Official tests
 
