@@ -1,1 +1,18 @@
+root = true
+
+[*]
+indent_style = space
 indent_size = 4
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Shell: 2 spaces, case branches indented (matches scripts/ and ./bobr).
+# The shfmt keys below are read by shfmt / bash-language-server.
+[{*.sh,bobr}]
+indent_size = 2
+switch_case_indent = true
+
+# make requires tabs in recipes
+[{Makefile,*.mk}]
+indent_style = tab

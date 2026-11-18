@@ -13,6 +13,9 @@ config.mk
 # Python extension (build per machine / Python version)
 python/bobr*.so
 
+# Python cache
+__pycache__/
+
 # imgs
 *.dot
 *.png
@@ -59,6 +62,9 @@ python/bobr*.so
 *.out
 *.app
 
+# Binaries
+/nvrtc_hello
+
 # Build directories
 build/
 Build/
@@ -71,15 +77,16 @@ dev-panel/src-tauri/target/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
+
 # Makefile (im tired of writing a new one sorryyyy)
-install_manifest.txt 
+install_manifest.txt
 compile_commands.json
 
 # Temporary files
-*.tmp 
-*.log 
-*.bak 
-*.swp 
+*.tmp
+*.log
+*.bak
+*.swp
 
 # vcpkg
 vcpkg_installed/
@@ -94,10 +101,14 @@ Testing/
 # pictures, .dot outputs
 out/
 
-# legacy code
-legacy/
 # Local virtualenv
 .venv/
 
 # Scratch notes
 tmp.md
+
+# Downloaded datasets (python/bench/mnist.py fetches data/mnist.npz)
+data/
+
+# macOS
+.DS_Store
