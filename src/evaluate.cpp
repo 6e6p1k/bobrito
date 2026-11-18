@@ -180,7 +180,6 @@ Graph::Graph(shared_ptr<Node> loss, bool disposable) {
     compute_fwd_order();
     locate_leaf_w_grad_nodes();
     this->disposable = disposable;
-    if (!disposable) collect_intermidiate_nodes();
 }
 
 void Graph::backward() {
@@ -195,12 +194,12 @@ void Graph::eval(bool debug) {
     else fwd_pass();
 
     if (need_backward()) {
-        if (bwd_order.size() < 0) throw logic_error("Backward order is empty!"); 
+        if (bwd_order.size() < 0) throw logic_error("Backward order is empty!");
         if (debug) debug_pass(bwd_order);
         else bwd_pass();
     }
 
-    if (disposable) 
+    if (disposable)
         detach_grads_from_bwd_graph();
 }
 
@@ -273,23 +272,6 @@ void Graph::pass(vector<Node*> order) {
         if (!node || !node->prim || !node->is_meta()) continue;
         node->prim->allocate(node);
         node->prim->eval(node);
-        if (!node->requires_grad) intermediates.push_back(node);
-    }
-}
-
-void Graph::collect_intermidiate_nodes() {
-    for (Node* node : bwd_order) {
-        if (!node->requires_grad) intermediates.push_back(node);
-    }
-    for (Node* node : fwd_order) {
-        if (!node->requires_grad) intermediates.push_back(node);
-    }
-}
-
-void Graph::zero_nodes_data() {
-    for (Node* node : intermediates) {
-        if (!node || !node->is_data()) continue;
-        node->d_data = nullptr;           
     }
 }
 
@@ -301,55 +283,55 @@ void Graph::debug_pass(vector<Node*> order) {
         if (!node || !node->prim || !node->is_meta()) continue;
         cout << "[" << node->prim->name() << "] " << node->label << endl;
 
-                                                    
-        cout << "\tLABEL ========> " << (node)->label << endl;               
-        cout << "\tPRIMITIVE ====> "                                             
-                << ((node)->prim ? (node)->prim->name() : "<no prim>")    
-                << endl;                                                          
-        if ((node)->is_meta()) {                                           
-            cout << "\tNDIM =========> " << (node)->get_ndim() << endl;     
-            cout << "\tSHAPE ========> [";                                     
-            for (int _i = 0; _i < (node)->get_ndim(); _i++)                
-                cout << (node)->get_shape()[_i]                            
-                        << (_i < (node)->get_ndim() - 1 ? ", " : "");         
-            cout << "]" << endl;                                               
-        } else {                                                               
-            cout << "\tNDIM =========> no meta" << endl;                        
-            cout << "\tSHAPE ========> no meta" << endl;                        
-        }                                                                                                             
 
-        auto _gn = (node)->owned_grad;                                 
-        cout << (_gn ? "\tGRAD =========> " + ptr_str(_gn.get())  + "."                       
-                        : "\tGRAD =========> doesnt exist.")                  
-                << endl;                                                      
-        if (_gn)                                                          
-            cout << (_gn->is_data_allocated()                              
+        cout << "\tLABEL ========> " << (node)->label << endl;
+        cout << "\tPRIMITIVE ====> "
+                << ((node)->prim ? (node)->prim->name() : "<no prim>")
+                << endl;
+        if ((node)->is_meta()) {
+            cout << "\tNDIM =========> " << (node)->get_ndim() << endl;
+            cout << "\tSHAPE ========> [";
+            for (int _i = 0; _i < (node)->get_ndim(); _i++)
+                cout << (node)->get_shape()[_i]
+                        << (_i < (node)->get_ndim() - 1 ? ", " : "");
+            cout << "]" << endl;
+        } else {
+            cout << "\tNDIM =========> no meta" << endl;
+            cout << "\tSHAPE ========> no meta" << endl;
+        }
+
+        auto _gn = (node)->owned_grad;
+        cout << (_gn ? "\tGRAD =========> " + ptr_str(_gn.get())  + "."
+                        : "\tGRAD =========> doesnt exist.")
+                << endl;
+        if (_gn)
+            cout << (_gn->is_data_allocated()
                             ? "\tGRAD DATA ====> " + ptr_str(_gn->get_data()) + "."
-                            : "\tGRAD DATA ====> is not allocated.")          
-                    << endl;                                                  
-                                                               
-        cout << "\tINPUTS (" << (node)->inputs.size() << "):" << endl;       
-        for (auto& _in : (node)->inputs) {                                
-            if (!_in)                                                          
-                cout << "\t\t<nullptr input>" << endl;                           
-            else                                                               
-                cout << "\t\t[" << (_in->prim ? _in->prim->name() : "<no prim>") 
-                        << "] "                                                   
-                        << (_in->label.empty() ? "<no label>" : _in->label)       
-                        << endl;                                                  
-        }                                                                      
-        cout << "\tOUTPUTS (" << (node)->outputs.size() << "):" << endl;     
-        for (auto& _out : (node)->outputs) {                               
-            auto _sp = _out.lock();                                            
-            if (!_sp)                                                          
-                cout << "\t\t[expired]" << endl;                                 
-            else                                                               
-                cout << "\t\t[" << (_sp->prim ? _sp->prim->name() : "<no prim>") 
-                        << "] "                                                   
-                        << (_sp->label.empty() ? "<no label>" : _sp->label)       
-                        << endl;                                                  
-        }                                                                      
-    
+                            : "\tGRAD DATA ====> is not allocated.")
+                    << endl;
+
+        cout << "\tINPUTS (" << (node)->inputs.size() << "):" << endl;
+        for (auto& _in : (node)->inputs) {
+            if (!_in)
+                cout << "\t\t<nullptr input>" << endl;
+            else
+                cout << "\t\t[" << (_in->prim ? _in->prim->name() : "<no prim>")
+                        << "] "
+                        << (_in->label.empty() ? "<no label>" : _in->label)
+                        << endl;
+        }
+        cout << "\tOUTPUTS (" << (node)->outputs.size() << "):" << endl;
+        for (auto& _out : (node)->outputs) {
+            auto _sp = _out.lock();
+            if (!_sp)
+                cout << "\t\t[expired]" << endl;
+            else
+                cout << "\t\t[" << (_sp->prim ? _sp->prim->name() : "<no prim>")
+                        << "] "
+                        << (_sp->label.empty() ? "<no label>" : _sp->label)
+                        << endl;
+        }
+
         node->prim->allocate(node);
         cout<<"After allocation:\n";
         cout << print_block(node->d_data->b_ptr);

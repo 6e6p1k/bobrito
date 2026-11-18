@@ -80,6 +80,12 @@ static shared_ptr<Node> leaf(vector<int> s, vector<float> d, string l,
     return n;
 }
 
+// Build the backward graph without running it (no CUDA work).
+static void build_bwd_graph(shared_ptr<Node> loss) {
+    Graph g(loss);
+    g.backward();
+}
+
 static bool cuda_available() {
     int count = 0;
     return cudaGetDeviceCount(&count) == cudaSuccess && count > 0;
@@ -93,7 +99,7 @@ void test_backward_sets_owned_grad_add() {
     auto a = leaf({2, 3}, vector<float>(6, 1.0f), "a", true);
     auto b = leaf({2, 3}, vector<float>(6, 2.0f), "b", true);
     auto c = add(a, b);
-    backward(c);
+    build_bwd_graph(c);
     check(a->owned_grad != nullptr, "a->owned_grad should be set");
     check(b->owned_grad != nullptr, "b->owned_grad should be set");
 }
@@ -102,7 +108,7 @@ void test_backward_sets_owned_grad_mul() {
     auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "a", true);
     auto b = leaf({3}, {4.0f, 5.0f, 6.0f}, "b", true);
     auto c = mul(a, b);
-    backward(c);
+    build_bwd_graph(c);
     check(a->owned_grad != nullptr, "a->owned_grad should be set after mul backward");
     check(b->owned_grad != nullptr, "b->owned_grad should be set after mul backward");
 }
@@ -112,7 +118,7 @@ void test_backward_deep_chain() {
     auto a = leaf({2}, {1.0f, 2.0f}, "a", true);
     auto b = leaf({2}, {3.0f, 4.0f}, "b", true);
     auto c = neg(add(a, b));
-    backward(c);
+    build_bwd_graph(c);
     check(a->owned_grad != nullptr, "a->owned_grad in neg(add) chain");
     check(b->owned_grad != nullptr, "b->owned_grad in neg(add) chain");
 }
@@ -120,23 +126,25 @@ void test_backward_deep_chain() {
 void test_backward_throws_on_leaf() {
     auto a = leaf({2}, {1.0f, 2.0f}, "a", true);  // requires_grad=true → IS a leaf
     bool threw = false;
-    try { backward(a); } catch (const logic_error&) { threw = true; }
+    try { build_bwd_graph(a); } catch (const logic_error&) { threw = true; }
     check(threw, "backward() on a requires_grad leaf should throw");
 }
 
-void test_backward_throws_on_sourceless_node() {
-    // node with no inputs
+void test_backward_noop_without_grad_leaves() {
+    // nothing requires grad -> Graph::backward() has nothing to build and returns quietly
     auto a = leaf({2}, {1.0f, 2.0f}, "a", false);
-    bool threw = false;
-    try { backward(a); } catch (const logic_error&) { threw = true; }
-    check(threw, "backward() on a node with no inputs should throw");
+    auto b = leaf({2}, {3.0f, 4.0f}, "b", false);
+    auto c = add(a, b);
+    build_bwd_graph(c);
+    check(a->owned_grad == nullptr && b->owned_grad == nullptr,
+          "no grads should be built when no leaf requires_grad");
 }
 
 void test_backward_owned_grad_shape_matches_input() {
     auto a = leaf({2, 3}, vector<float>(6, 1.0f), "a", true);
     auto b = leaf({2, 3}, vector<float>(6, 1.0f), "b", true);
     auto c = mul(a, b);
-    backward(c);
+    build_bwd_graph(c);
     // grad shape must match the input's shape
     check(a->owned_grad->get_ndim() == a->get_ndim(),
           "grad ndim should match input ndim");
@@ -151,12 +159,10 @@ void test_backward_owned_grad_shape_matches_input() {
 
 // ------ ADD ------
 // c = a + b,  dc/da = 1,  dc/db = 1
-// add vjp uses skip() which shares d_data with upstream seed — works with eval(c).
 void test_add_grad() {
     auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "a", true);
     auto b = leaf({3}, {4.0f, 5.0f, 6.0f}, "b", true);
     auto c = add(a, b);
-    backward(c);
     eval(c);
     check_values(a->owned_grad, {1, 1, 1});
     check_values(b->owned_grad, {1, 1, 1});
@@ -167,7 +173,6 @@ void test_add_grad_2d() {
     auto a = leaf({2, 3}, vector<float>(6, 1.0f), "a", true);
     auto b = leaf({2, 3}, vector<float>(6, 2.0f), "b", true);
     auto c = add(a, b);
-    backward(c);
     eval(c);
     check_values(a->owned_grad, {1, 1, 1, 1, 1, 1});
     check_values(b->owned_grad, {1, 1, 1, 1, 1, 1});
@@ -179,7 +184,6 @@ void test_sub_grad_a() {
     auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "a", true);
     auto b = leaf({3}, {4.0f, 5.0f, 6.0f}, "b", true);
     auto c = sub(a, b);
-    backward(c);
     eval(c);
     // dc/da = 1 via skip — shares data with seed
     check_values(a->owned_grad, {1, 1, 1});
@@ -189,22 +193,18 @@ void test_sub_grad_b() {
     auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "a", true);
     auto b = leaf({3}, {4.0f, 5.0f, 6.0f}, "b", true);
     auto c = sub(a, b);
-    backward(c);
     eval(c);
-    // dc/db = -1 via neg(seed) — neg node needs explicit eval
+    // dc/db = -1 via neg(seed)
     check_values(b->owned_grad, {-1, -1, -1});
 }
 
 // ------ MUL ------
 // c = a * b,  dc/da = b,  dc/db = a
 // vjp: out[0] = mul(upstream, b), out[1] = mul(upstream, a)
-// These are new nodes — eval(c) doesn't reach them; run_eval() needed.
 void test_mul_grad_a() {
     auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "a", true);
     auto b = leaf({3}, {4.0f, 5.0f, 6.0f}, "b", true);
     auto c = mul(a, b);
-    backward(c);
-
     eval(c);
     // dc/da = b = [4, 5, 6]
     check_values(a->owned_grad, {4, 5, 6});
@@ -214,7 +214,6 @@ void test_mul_grad_b() {
     auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "a", true);
     auto b = leaf({3}, {4.0f, 5.0f, 6.0f}, "b", true);
     auto c = mul(a, b);
-    backward(c);
     eval(c);
     // dc/db = a = [1, 2, 3]
     check_values(b->owned_grad, {1, 2, 3});
@@ -225,7 +224,6 @@ void test_mul_grad_b() {
 void test_neg_grad() {
     auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "specific_a", true);
     auto c = neg(a);
-    backward(c);
     eval(c);
     check_values(a->owned_grad, {-1, -1, -1});
 }
@@ -235,7 +233,6 @@ void test_neg_grad() {
 void test_log_grad() {
     auto a = leaf({3}, {1.0f, 2.0f, 4.0f}, "a", true);
     auto c = log(a);
-    backward(c);
     eval(c);
     // dc/da = 1/a = [1, 0.5, 0.25]
     check_values(a->owned_grad, {1.0f, 0.5f, 0.25f});
@@ -247,7 +244,6 @@ void test_log_grad() {
 void test_sum_ld_grad() {
     auto a = leaf({2, 3}, {1, 2, 3, 4, 5, 6}, "a", true);
     auto s = sum_ld(a);
-    backward(s);
     eval(s);
     check_values(a->owned_grad, {1, 1, 1, 1, 1, 1});
 }
@@ -258,7 +254,6 @@ void test_chain_neg_add_grad() {
     auto a = leaf({3}, {1.0f, 0.0f, -1.0f}, "a", true);
     auto b = leaf({3}, {2.0f, 2.0f,  2.0f}, "b", true);
     auto loss = neg(add(a, b));
-    backward(loss);
     eval(loss);
     check_values(a->owned_grad, {-1, -1, -1});
     check_values(b->owned_grad, {-1, -1, -1});
@@ -271,7 +266,6 @@ void test_shared_input_grad() {
     auto a = leaf({3}, {1.0f, 2.0f, 3.0f}, "a", true);
     auto b = leaf({3}, {4.0f, 5.0f, 6.0f}, "b", true);
     auto loss = add(mul(a, b), a);  // a*b + a
-    backward(loss);
     eval(loss);
     // dloss/da = b + 1 = [5, 6, 7]
     // dloss/db = a     = [1, 2, 3]
@@ -292,7 +286,6 @@ void test_matmul_grad() {
     auto a = leaf({2, 2}, {1, 1, 1, 1}, "a", true);
     auto b = leaf({2, 2}, {1, 1, 1, 1}, "b", true);
     auto c = matmul(a, b);
-    backward(c);
     eval(c);
     check_values(a->owned_grad, {2, 2, 2, 2});
     check_values(b->owned_grad, {2, 2, 2, 2});
@@ -307,7 +300,7 @@ int main() {
     RUN(test_backward_sets_owned_grad_mul);
     RUN(test_backward_deep_chain);
     RUN(test_backward_throws_on_leaf);
-    RUN(test_backward_throws_on_sourceless_node);
+    RUN(test_backward_noop_without_grad_leaves);
     RUN(test_backward_owned_grad_shape_matches_input);
 
     if (cuda_available()) {
@@ -336,8 +329,6 @@ int main() {
         cout << "    -> matmul vjp mutates transposed flag on original inputs\n";
         cout << "  - exp vjp computes x*grad instead of exp(x)*grad\n";
         cout << "  - bwd_relu only puts {fwd_node} in inputs, misses grad -> segfault on eval\n";
-        cout << "  - eval(c) bwd_order only traverses from seed toward its inputs,\n";
-        cout << "    so grad nodes (mul, neg, etc.) need explicit run_eval()\n";
     }
 
     return g_passed == g_run ? 0 : 1;

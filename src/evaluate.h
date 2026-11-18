@@ -10,7 +10,6 @@ struct Graph {
     std::vector<Node*> fused_fwd_order;
     std::vector<Node*> bwd_order;
     std::vector<std::shared_ptr<Node>> require_grad_nodes;
-    std::vector<Node*> intermediates;
 
     bool disposable = true;
     std::vector<Node*> bwd_nodes;
@@ -22,8 +21,6 @@ struct Graph {
     void detach_grads_from_bwd_graph();
     void fuse_fwd_order();
     void fwd_bwd_pass();
-    void collect_intermidiate_nodes();
-    void zero_nodes_data();
     void fwd_pass();
     void bwd_pass();
     std::vector<std::shared_ptr<Node>> parameters();
@@ -44,6 +41,5 @@ struct Graph {
     void _backward();
 };
 std::shared_ptr<Graph> make_model(std::shared_ptr<Node> root);
-void backward(std::shared_ptr<Node> loss);
 void eval(std::shared_ptr<Node> root, bool export_graph = false);
 void debug_eval(std::shared_ptr<Node> root, bool export_graph, bool disposable);
