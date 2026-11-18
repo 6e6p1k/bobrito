@@ -43,19 +43,21 @@ __global__ void contiguous(float* src, float* dst, int size, ContiguousInfo info
 
 __global__ void transpose(float* src, float* dst, int m, int n, int size)
 {
-    // Transpose a [m, n] matrix to [n, m]
-    // src is laid out as [m, n]: element [i, j] is at src[i * n + j]
-    // dst should be laid out as [n, m]: element [j, i] should be at dst[j * m + i]
+    // Transpose a batch of [m, n] matrices to [n, m] (last two dims swapped)
+    // src is laid out as [batch, m, n]: element [b, i, j] is at src[b * m * n + i * n + j]
+    // dst should be laid out as [batch, n, m]: element [b, j, i] should be at dst[b * m * n + j * m + i]
 
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
 
-    // Convert flat index to [m, n] coordinates
-    int i = idx / n;  // row in source (m dimension)
-    int j = idx % n;  // col in source (n dimension)
+    // Convert flat index to [batch, m, n] coordinates
+    int mn = m * n;
+    int b = idx / mn;         // which matrix in the batch (always 0 for 2D)
+    int i = (idx % mn) / n;   // row in source (m dimension)
+    int j = idx % n;          // col in source (n dimension)
 
     // In destination [n, m], element [j, i] is at position j * m + i
-    int dst_idx = j * m + i;
+    int dst_idx = b * mn + j * m + i;
 
     dst[dst_idx] = src[idx];
 }

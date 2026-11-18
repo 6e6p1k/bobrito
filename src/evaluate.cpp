@@ -91,7 +91,9 @@ void build_backward(shared_ptr<Node> fwd_node, shared_ptr<Node> bwd_node,
         bool is_leaf = fwd_node->inputs[i]->inputs.size() == 0;
         if (is_leaf && !requires_grad) {
             // remove useless grads from outputs to avoid computing them
-            bwd_node->outputs[i].reset();
+            // (find grads[i] itself: outputs is not indexed like fwd_node->inputs)
+            for (auto& out : bwd_node->outputs)
+                if (out.lock() == grads[i]) out.reset();
             continue;
         }
         auto input = fwd_node->inputs[i];
@@ -214,7 +216,7 @@ void Graph::fuse_fwd_order() {
     unordered_set<Node*> visited;
     count_uses(root, uses, visited);
 
-    int i = fwd_order.size();
+    int i = (int)fwd_order.size() - 1;
     while (i >= 0) {
         auto node = fwd_order[i];
         if (uses[node] == 1) {

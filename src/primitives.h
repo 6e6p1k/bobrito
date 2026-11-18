@@ -96,6 +96,7 @@ extern ExpPrim prim_exp;
 // ========================= SQRT ==========================
 struct SqrtPrim : Primitive {
     void eval(Node* node) override;
+    void vjp(std::shared_ptr<Node> fwd, std::shared_ptr<Node> bwd, std::shared_ptr<Node> out[]) override;
     const std::string name() override { return "Sqrt"; }
     const std::string symbol() override { return "sqrt"; }
     PrimCategory category() const override { return PrimCategory::EwiseUnary; }

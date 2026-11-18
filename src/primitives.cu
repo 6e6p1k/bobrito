@@ -143,6 +143,33 @@ shared_ptr<Node> bwd_relu(shared_ptr<Node> grad, shared_ptr<Node> fwd_node) {
     return out_node;
 }
 
+// ========================= FULL ==========================
+FullPrim prim_full;
+
+void FullPrim::eval(Node* node) {
+    int n = node->get_size();
+    float val = SCALAR(node->inputs[0])->value;
+    kernels::fill<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(node->get_data(), val, n);
+}
+
+shared_ptr<Node> full(int* shape, int ndim, float fill_val) {
+    shared_ptr<ScalarNode> scalar = make_scalar_node(fill_val, "fill_val");
+    shared_ptr<Node> out_node = make_node(&prim_full, {scalar}, shape, ndim);
+    out_node->set_label("full(" + to_string((int)fill_val) + ")");
+    return out_node;
+}
+
+shared_ptr<Node> full_like(shared_ptr<Node> n, float fill_val) {
+    shared_ptr<ScalarNode> scalar = make_scalar_node(fill_val, "fill_val");
+    shared_ptr<Node> out_node = make_node(&prim_full, {scalar}, n->get_shape(), n->get_ndim());
+    out_node->set_label("full(" + to_string((int)fill_val) + ")");
+    return out_node;
+}
+
+shared_ptr<Node> full(vector<int> shape, float fill_val) {
+    return full(shape.data(), shape.size(), fill_val);
+}
+
 // ========================== NEG ==========================
 NegPrim prim_neg;
 
@@ -177,6 +204,14 @@ SqrtPrim prim_sqrt;
 
 void SqrtPrim::eval(Node* node) { unary_eval<cuSqrt>(node); }
 
+void SqrtPrim::vjp(std::shared_ptr<Node> fwd, std::shared_ptr<Node> bwd,
+    std::shared_ptr<Node> out[]) {
+        auto s = copy_node_no_prim(fwd);
+        auto two = full_like(s, 2.0f);
+        two->is_bwd = true; // constants must be bwd nodes, or the bwd pass never evaluates them
+        out[0] = div(bwd, mul(two, s));
+}
+
 shared_ptr<Node> sqrt(shared_ptr<Node> a) {
     return unary_helper(&prim_sqrt, a, a->label + ".sqrt()");
 }
@@ -194,27 +229,6 @@ void LogPrim::vjp(shared_ptr<Node> fwd, shared_ptr<Node> bwd,
 
 shared_ptr<Node> log(shared_ptr<Node> a) {
     return unary_helper(&prim_log, a, a->label + ".log()");
-}
-
-// ========================= FULL ==========================
-FullPrim prim_full;
-
-void FullPrim::eval(Node* node) {
-    int n = node->get_size();
-    float val = SCALAR(node->inputs[0])->value;
-    kernels::fill<<<GRID_SIZE(n), BLOCK_SIZE, 0, bobr::current_stream()>>>(node->get_data(), val, n);
-}
-
-shared_ptr<Node> full(int* shape, int ndim, float fill_val) {
-    shared_ptr<ScalarNode> scalar = make_scalar_node(fill_val, "fill_val");
-    shared_ptr<Node> out_node = make_node(&prim_full, {scalar}, shape, ndim);
-    out_node->set_label("full(" + to_string((int)fill_val) + ")");
-    return out_node;
-}
-
-shared_ptr<Node> full(vector<int> shape, float fill_val) {
-    auto node = _empty_leaf_node(shape);
-    return full(shape.data(), shape.size(), fill_val);
 }
 
 // ======================== ARANGE =========================
@@ -479,6 +493,13 @@ shared_ptr<Node> pow(shared_ptr<Node> a, shared_ptr<Node> exp) {
     shared_ptr<Node> out_node =
         make_node(&prim_pow, {a, exp}, a->get_shape(), a->get_ndim());
     return out_node;
+}
+
+// the one declared in ops.h: exponent is a plain float, broadcast to a's shape
+shared_ptr<Node> pow(shared_ptr<Node> a, float exponent) {
+    auto exp = full_like(a, exponent);
+    exp->is_bwd = a->is_bwd;  // inside a vjp the constant must be a bwd node too (see SqrtPrim::vjp)
+    return pow(a, exp);
 }
 
 // ======================== BWD POW ========================
@@ -772,59 +793,53 @@ shared_ptr<Node> expand_ld(shared_ptr<Node> a, int* out_shape, int out_ndim) {
 // ============================================================
 shared_ptr<Node> reduction_helper(Primitive* prim, shared_ptr<Node> a, int dim,
                                   bool keepdims) {
-    // 0. handle negative indexing
+    // 0. check the dim and handle negative indexing
     int ndim = a->get_ndim();
+    if (dim < -ndim || dim >= ndim)
+        throw std::logic_error("Reduction dim " + to_string(dim) +
+                               " is out of range for a " + to_string(ndim) + "-dim tensor.");
     dim = (dim + ndim) % ndim;
 
     if (dim == ndim - 1 && !keepdims) return reduction_ld_helper(prim, a);
 
-    // For 2D tensors summing along dimension 0, use transpose for correct semantics
-    if (ndim == 2 && dim == 0) {
-        // [M, N] -> transpose to [N, M] -> sum last dim -> [N]
-        auto transposed = transpose(a);
-        auto summed = reduction_ld_helper(prim, transposed);
-        if (keepdims) {
-            int* res_shape = new int[2];
-            res_shape[0] = 1;
-            res_shape[1] = a->get_shape()[1];  // N
-            return reshape(summed, res_shape, 2);
-        }
-        return summed;
+    // last dim with keepdims: nothing to move, reduce and put the dim back as 1
+    if (dim == ndim - 1) {
+        auto node_after_sum = reduction_ld_helper(prim, a);
+        int res_shape[ndim];
+        for (int i = 0; i < ndim - 1; ++i) res_shape[i] = a->get_shape()[i];
+        res_shape[ndim - 1] = 1;
+        return reshape(node_after_sum, res_shape, ndim);
     }
 
-    // For other cases, use the original algorithm
-    // 1. reshape, put the dim to the end
-    int* shape_copy = new int[ndim];
-    int val = a->get_shape()[dim];
-    int j = 0;
-    for (int i = 0; i < ndim; ++i)
-        if (i != dim) shape_copy[j++] = a->h_meta->shape()[i];
-    shape_copy[ndim - 1] = val;
+    // reshape alone can't move a dim to the end (it doesn't move the data),
+    // so view a as [pre, D, post] and let transpose do the actual move
+    // 1. view as [pre, D, post], D is the reduced dim
+    int pre = 1, post = 1;
+    for (int i = 0; i < dim; ++i) pre *= a->get_shape()[i];
+    for (int i = dim + 1; i < ndim; ++i) post *= a->get_shape()[i];
+    int view_shape[3] = {pre, a->get_shape()[dim], post};
+    auto viewed_node = reshape(a, view_shape, 3);
 
-    auto reshaped_node = reshape(a, shape_copy, ndim);
+    // 2. move D to the end: [pre, D, post] -> [pre, post, D]
+    auto moved_node = transpose(viewed_node);
 
-    // 2. make contiguous
-    auto contiguous_node = contiguous(reshaped_node);
+    // 3. perform last dim reduction -> [pre, post]
+    auto node_after_sum = reduction_ld_helper(prim, moved_node);
 
-    // 3. perform last dim reduction
-    auto node_after_sum = reduction_ld_helper(prim, contiguous_node);
-
-    // 4. if keepdims = True, insert another dim
-    if (keepdims) {
-        int* res_shape = new int[ndim];
-        for (int i = 0; i < ndim; ++i)
-            res_shape[i] = (i == dim) ? 1 : a->get_shape()[i];
-        std::shared_ptr<Node> node = reshape(node_after_sum, res_shape, ndim);
-        return node;
+    // 4. reshape to the output shape (reduced dim dropped, or kept as 1 if keepdims)
+    int res_shape[ndim];
+    int res_ndim = 0;
+    for (int i = 0; i < ndim; ++i) {
+        if (i != dim) res_shape[res_ndim++] = a->get_shape()[i];
+        else if (keepdims) res_shape[res_ndim++] = 1;
     }
-    return node_after_sum;
+    return reshape(node_after_sum, res_shape, res_ndim);
 }
 
 // reduce all dims
-shared_ptr<Node> reduction_helper(Primitive* prim, shared_ptr<Node> a) {
+shared_ptr<Node> reduction_helper(Primitive* prim, shared_ptr<Node> a, bool keepdims) {
     // 1. reshape to [size]
-    int* new_shape = new int[1];
-    new_shape[0] = a->get_size();
+    int new_shape[1] = {a->get_size()};
     auto reshaped_node = reshape(a, new_shape, 1);
 
     // 2. make contiguous
@@ -833,7 +848,12 @@ shared_ptr<Node> reduction_helper(Primitive* prim, shared_ptr<Node> a) {
     // 3. perform last dim reduction
     auto node_after_sum = reduction_ld_helper(prim, contiguous_node);
 
-    return node_after_sum;
+    // 4. if keepdims, every dim stays as 1
+    int ndim = a->get_ndim();
+    if (!keepdims || ndim == 0) return node_after_sum;
+    int res_shape[ndim];
+    for (int i = 0; i < ndim; ++i) res_shape[i] = 1;
+    return reshape(node_after_sum, res_shape, ndim);
 }
 
 // ========================== SUM ==========================
@@ -842,8 +862,8 @@ SumPrim prim_sum;
 void SumPrim::eval(Node* node) { reduction_ld_eval<cubSum>(node); }
 
 shared_ptr<Node> sum(shared_ptr<Node> a, int dim, bool keepdims) {
-    if (dim == 52 && keepdims == false) {
-        return reduction_helper(&prim_sum_ld, a);
+    if (dim == 52) {  // 52 = no dim given: reduce all dims
+        return reduction_helper(&prim_sum_ld, a, keepdims);
     }
     return reduction_helper(&prim_sum_ld, a, dim, keepdims);
 }
@@ -851,11 +871,11 @@ shared_ptr<Node> sum(shared_ptr<Node> a, int dim, bool keepdims) {
 // ========================== MIN ==========================
 MinPrim prim_min;
 
-void MinPrim::eval(Node* node) { reduction_ld_eval<cubSum>(node); }
+void MinPrim::eval(Node* node) { reduction_ld_eval<cubMin>(node); }
 
 shared_ptr<Node> min(shared_ptr<Node> a, int dim, bool keepdims) {
-    if (dim == 52 && keepdims == false) {
-        return reduction_helper(&prim_min_ld, a);
+    if (dim == 52) {  // 52 = no dim given: reduce all dims
+        return reduction_helper(&prim_min_ld, a, keepdims);
     }
     return reduction_helper(&prim_min_ld, a, dim, keepdims);
 }
@@ -863,11 +883,11 @@ shared_ptr<Node> min(shared_ptr<Node> a, int dim, bool keepdims) {
 // ========================== MAX ==========================
 MaxPrim prim_max;
 
-void MaxPrim::eval(Node* node) { reduction_ld_eval<cubSum>(node); }
+void MaxPrim::eval(Node* node) { reduction_ld_eval<cubMax>(node); }
 
 shared_ptr<Node> max(shared_ptr<Node> a, int dim, bool keepdims) {
-    if (dim == 52 && keepdims == false) {
-        return reduction_helper(&prim_max_ld, a);
+    if (dim == 52) {  // 52 = no dim given: reduce all dims
+        return reduction_helper(&prim_max_ld, a, keepdims);
     }
     return reduction_helper(&prim_max_ld, a, dim, keepdims);
 }
@@ -946,12 +966,9 @@ shared_ptr<Node> reshape(shared_ptr<Node> a, int* new_shape, int new_ndim) {
     // quick check
     if (utils::numel(a->get_ndim(), a->get_shape()) !=
         utils::numel(new_ndim, new_shape))
-        throw std::logic_error("Cannot broadcast this.");
+        throw std::logic_error("Cannot reshape: number of elements differs.");
 
-    // compute new strides
-    int* new_strides = new int[new_ndim];
-    utils::compute_strides(new_strides, new_ndim, new_shape);
-
+    // strides are computed by make_node (make_shape_data)
     shared_ptr<Node> out_node =
         make_node(&prim_reshape, {a}, new_shape, new_ndim);
     out_node->set_label(a->label + ".reshape()");

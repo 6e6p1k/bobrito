@@ -44,6 +44,7 @@ std::shared_ptr<Node> reduce_to_shape(std::shared_ptr<Node> a, std::vector<int> 
 // interface 
 std::shared_ptr<Node> make_leaf_node(std::vector<int> shape, std::vector<float> h_data);
 std::shared_ptr<Node> full(int* shape, int ndim, float fill_val);
+std::shared_ptr<Node> full_like(std::shared_ptr<Node> n, float fill_val);
 std::shared_ptr<Node> full(std::vector<int> shape, float fill_val);
 std::shared_ptr<Node> arange(std::vector<int> shape, int start, int step = 1);
 std::shared_ptr<Node> arange(int start, int end, int step = 1);
