@@ -16,7 +16,7 @@
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
 {
-   if (code != cudaSuccess) 
+   if (code != cudaSuccess)
    {
       fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
       if (abort) exit(code);
@@ -36,7 +36,7 @@ void Block::free_block(void) {
     switch (err) {
         case cudaSuccess: return;
         case cudaErrorCudartUnloading: return;
-        
+
         default: throw std::runtime_error(
             std::string("Error freeing a block: ") + cudaGetErrorString(err)
         );
@@ -46,7 +46,7 @@ void Block::free_block(void) {
 
 // <Memory pool class>
 MemoryPool& MemoryPool::call() {
-    static MemoryPool instance; 
+    static MemoryPool instance;
     return instance;
 }
 
@@ -59,7 +59,7 @@ std::string MemoryPool::stats() {
 void MemoryPool::free(Block* b_ptr)
 {
     b_ptr->free_block();
-    
+
     // <statistics>
     allocated_blocks.erase(b_ptr);
     total_allocations--;
@@ -70,7 +70,7 @@ void MemoryPool::free(Block* b_ptr)
 }
 
 
-void MemoryPool::empty_cache(void) 
+void MemoryPool::empty_cache(void)
 {
     cudaError_t err = cudaMemPoolTrimTo(pool, 0);
     if (err != cudaSuccess) throw std::runtime_error(
@@ -82,25 +82,25 @@ void MemoryPool::allocate(Block** dst, size_t bytes) {
     Block* b = new Block();
     b->size = bytes;
     b->allocate_block();
-    #ifdef BOBR_ALLOC_DEBUG 
+    #ifdef BOBR_ALLOC_DEBUG
         cudaMemsetAsync(b->d_ptr, 0xFF, bytes, bobr::current_stream());
     #endif
     *dst = b;
 
     // for stats & debugging purposes
     total_allocations++;
-    total_bytes_in_use += bytes;    
+    total_bytes_in_use += bytes;
     allocated_blocks.insert(b);
 }
 
 // private constructor
-MemoryPool::MemoryPool() 
+MemoryPool::MemoryPool()
 {
     cudaDeviceGetDefaultMemPool(&pool, 0);
     uint64_t keep_all = UINT64_MAX;
     cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &keep_all);
-} 
-    
+}
+
 MemSnapshot snapshot() {
     cudaDeviceSynchronize();
     MemSnapshot s;
@@ -116,7 +116,7 @@ std::string print_block(const Block* block) {
         << " (" << block->size / sizeof(float) << " floats" << ")" << "\n"
         << "\tData ptr: " << block->d_ptr << "\n"
         << "\tData (first 12 floats): ";
-        int display_size = std::min((int)(block->size / sizeof(float)), 12);
+        int display_size = (int)std::min(block->size / sizeof(float), (size_t)12);
         float tmp[display_size];
         cudaStreamSynchronize(bobr::current_stream());
         cudaMemcpy(tmp, block->d_ptr, std::min(block->size, display_size * sizeof(float)), cudaMemcpyDeviceToHost);
@@ -165,9 +165,9 @@ void print_allocated_blocks() {
 
 
 // <ContentData>
-void ContentData::allocate(int size)
+void ContentData::allocate(size_t size)
 {
-    if (!b_ptr) {    
+    if (!b_ptr) {
         MemoryPool::call().allocate(&b_ptr, size * sizeof(float));
         _size = size;
     } else {
@@ -181,10 +181,10 @@ float* ContentData::data()
     return (float*)b_ptr->d_ptr;
 }
 
-int ContentData::size()
+size_t ContentData::size()
 {
-    if (_size == -1) throw std::logic_error("Nothing was allocated yet. nowhere to get size.");
-    else return _size;
+    if (_size == 0) throw std::logic_error("Nothing was allocated yet. nowhere to get size.");
+    return _size;
 }
 
 size_t ContentData::bytes()
@@ -203,26 +203,21 @@ float* ContentData::d_to_h()
     return dst;
 }
 
-void ContentData::h_to_d(float* h_data, int size)
+void ContentData::h_to_d(float* h_data, size_t size)
 {
+    if (!b_ptr) allocate(size);
     check();
     size_t bytes = size * sizeof(float);
-    if (!b_ptr)
-    {
-        MemoryPool::call().allocate(&b_ptr, bytes);
-    }
     if (bytes > b_ptr->size) throw std::length_error("h_to_d: " + std::to_string(bytes) + " bytes do not fit a " + std::to_string(b_ptr->size) + "-byte block");
-    gpuErrchk( cudaMemcpyAsync(b_ptr->d_ptr, h_data, bytes, 
+    gpuErrchk( cudaMemcpyAsync(b_ptr->d_ptr, h_data, bytes,
         cudaMemcpyHostToDevice, bobr::current_stream()) );
 }
 
-void ContentData::d_to_d(float* d_data, int size)
+void ContentData::d_to_d(float* d_data, size_t size)
 {
+    if (!b_ptr) allocate(size);
+    check();
     size_t bytes = size * sizeof(float);
-    if (!b_ptr)
-    {
-        MemoryPool::call().allocate(&b_ptr, bytes);
-    }
     if (bytes > b_ptr->size) throw std::length_error("d_to_d: " + std::to_string(bytes) + " bytes do not fit a " + std::to_string(b_ptr->size) + "-byte block");
     gpuErrchk( cudaMemcpyAsync(b_ptr->d_ptr, d_data, bytes,
          cudaMemcpyDeviceToDevice, bobr::current_stream()) );

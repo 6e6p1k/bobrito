@@ -65,15 +65,15 @@ std::string print_block(const Block* block);
 struct ContentData
 {
     Block* b_ptr = nullptr;
-    int _size = -1;
+    size_t _size = 0; // element count; 0 = nothing allocated
 
     float* data();
-    int size();
+    size_t size();
     size_t bytes();
-    void allocate(int size);
+    void allocate(size_t size);
     float* d_to_h();
-    void h_to_d(float* h_data, int size);
-    void d_to_d(float* d_data, int size);
+    void h_to_d(float* h_data, size_t size);
+    void d_to_d(float* d_data, size_t size);
     bool is_allocated(void);
 
     ~ContentData()
@@ -97,18 +97,14 @@ struct ContentData
         : b_ptr(other.b_ptr), _size(other._size)
     {
         other.b_ptr = nullptr;
-        other._size = -1;
+        other._size = 0;
     }
 
     ContentData& operator=(ContentData&& other) noexcept
     {
-        if (this != &other) {
-            if (b_ptr != nullptr) MemoryPool::call().free(b_ptr);
-            b_ptr = other.b_ptr;
-            _size = other._size;
-            other.b_ptr = nullptr;
-            other._size = -1;
-        }
+        ContentData tmp(std::move(other));
+        std::swap(b_ptr, tmp.b_ptr);
+        std::swap(_size, tmp._size);
         return *this;
     }
 
